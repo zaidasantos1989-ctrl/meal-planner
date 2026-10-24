@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.db
+.streamlit/secrets.toml
+.weekly_salad.json
+.env
