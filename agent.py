@@ -234,7 +234,6 @@ def _allergy_problems(meals: list[MealOut], banned: set[str]) -> list[str]:
                     break
     return problems
 
-
 def _household_rules(profile, is_swedish: bool) -> str:
     if is_swedish:
         return f"""Hushåll: {profile.people} personer.
@@ -243,15 +242,16 @@ Ogillar - undvik: {profile.dislikes or "inga"}.
 Önskemål: {profile.preferences or "inga"}.
 Max tillagningstid: {profile.max_minutes} minuter.
 
-Regler för receptval och formatering (KRITISKT):
-- RIKTIGA RECEPT: Du MÅSTE välja faktiska, beprövade recept från etablerade svenska matsajter (Köket.se, ICA.se, Arla.se, Coop.se, Tasteline eller Zeinas Kitchen). Hitta ALDRIG på egna recept!
-- KÄLLANVISNING: I slutet av instruktionerna, ange alltid källan som text (t.ex. 'Källa: Köket.se' eller 'Källa: ICA.se'). Skriv ALDRIG ut påhittade URL-adresser.
+Regler för receptval och instruktioner (KRITISKT):
+- RIKTIGA RECEPT: Du MÅSTE välja faktiska, beprövade recept från etablerade svenska matsajter: Köket.se, ICA.se, Arla.se, Coop.se, Tasteline eller Zeinas Kitchen.
+- AUTENTISKA STEG: Skriv ut de FULLSTÄNDIGA, DETALJERADE tillagningsstegen exakt så som rätten tillagas i originalreceptet. Du får INTE sammanfatta, korta ner eller förenkla bort steg!
+- FORMAT PÅ STEG: Varje steg MÅSTE vara ett eget numrerat stycke (1., 2., 3., osv.) med en tom rad mellan varje steg så att det blir en tydlig lista.
+- KÄLLHÄNVISNING: Avsluta instruktionerna med att ange källan som ren text på en egen rad, t.ex: "Källa: ICA.se" eller "Källa: Köket.se". Skriv ALDRIG ut påhittade URL-adresser.
 - SPRÅK: Skriv ALLA receptnamn, instruktioner och ingredienser helt på svenska.
-- KOLHYDRAT/TILLBEHÖR: Varje måltid MÅSTE paras ihop med ett passande kolhydrattillbehör som MÅSTE inkluderas i ingredienslistan för {profile.people} personer så att det hamnar på inköpslistan.
+- KOLHYDRAT/TILLBEHÖR: Varje måltid MÅSTE paras ihop med ett passande kolhydrattillbehör som MÅSTE inkluderas i ingredienslistan för {profile.people} personer.
 - Mängder är anpassade för {profile.people} personer i metriska enheter: g, kg, dl, l, st, msk, tsk.
-- Använd korta, tydliga ingrediensnamn på svenska ("gul lök", "kycklingfilé", "krossade tomater", "basmatiris").
-- aisle MÅSTE vara en av följande: {", ".join(AISLES)}.
-- instructions: MÅSTE vara en tydligt numrerad lista där varje steg börjar på en ny rad med '1. ', '2. ', '3. '."""
+- Använd tydliga ingrediensnamn på svenska ("gul lök", "kycklingfilé", "krossade tomater").
+- aisle MÅSTE vara en av följande: {", ".join(AISLES)}."""
     else:
         return f"""Household: {profile.people} people.
 STRICT allergies - never use these or any ingredient containing them: {profile.allergies or "none"}.
@@ -259,15 +259,14 @@ Dislikes - avoid: {profile.dislikes or "none"}.
 Preferences: {profile.preferences or "none"}.
 Max cooking time: {profile.max_minutes} minutes.
 
-Recipe Selection & Formatting Rules (CRITICAL):
-- REAL RECIPES: You MUST choose real, published recipes from established Swedish recipe websites (Köket.se, ICA.se, Arla.se, Coop.se, Tasteline, or Zeinas Kitchen). Never invent fictional dishes!
-- SOURCE ATTRIBUTION: At the end of the instructions, always mention the source name (e.g. 'Source: Köket.se' or 'Source: ICA.se'). Never write out fake URL links.
+Recipe Selection & Instructions Rules (CRITICAL):
+- REAL RECIPES: You MUST choose real, published recipes from established Swedish recipe websites (Köket.se, ICA.se, Arla.se, Coop.se, Tasteline, or Zeinas Kitchen).
+- AUTHENTIC STEPS: Provide the FULL, DETAILED cooking steps exactly as prepared in the authentic recipe. Do NOT summarize, shorten, or omit steps!
+- STEP FORMAT: Every step MUST be a separate numbered item (1., 2., 3., etc.) with an empty line between each step.
+- SOURCE ATTRIBUTION: End the instructions with the source as plain text on its own line (e.g. "Source: ICA.se"). Never write fake URLs.
 - LANGUAGE: Write all titles, ingredients, and instructions in English.
 - CARBOHYDRATE SIDE: Every meal MUST pair with an ideal carbohydrate side dish included in the ingredients list for {profile.people} people.
-- Ingredient quantities are for {profile.people} people, in metric units: g, kg, ml, l, pcs, tbsp, tsp.
-- aisle must be one of: {", ".join(AISLES)}.
-- instructions: MUST be formatted as a numbered list with each step starting on a new line with '1. ', '2. ', '3. '."""
-
+- aisle must be one of: {", ".join(AISLES)}."""
 
 def _run(api_key, model, prompt, schema, check, on_step=None):
     """Generate -> validate -> ask for a fix, until the checks pass or attempts run out."""
