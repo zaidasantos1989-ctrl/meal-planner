@@ -89,11 +89,11 @@ T = {
         "saved_ok": "Saved ✅",
         # AI Language Prompting
         "ai_lang_instruction": (
-            "Formatting & Recipe Rules:\n"
-            "1. CARBOHYDRATE SIDE: Every meal must pair with an ideal carbohydrate side dish (e.g., jasmine rice, boiled potatoes, pasta, egg noodles, bulgur, couscous). "
-            "CRITICAL: You MUST add this carbohydrate side dish directly into the meal's ingredients list with the proper quantity (e.g. '800 g potatoes' or '4 portions rice') so it gets added to the grocery list!\n"
-            "2. NUMBERED STEPS: Do NOT write instructions in a single paragraph. You MUST format instructions as numbered steps (1., 2., 3., etc.) with an empty line between each step.\n"
-            "3. LANGUAGE: All recipe titles, ingredients, and instructions must be in English."
+            "Source & Recipe Rules:\n"
+            "1. Pick only established recipes from Köket.se, ICA.se, Arla.se, Coop.se, Tasteline, or Zeinas Kitchen.\n"
+            "2. At the end of each meal's instructions, include the direct link to the recipe: 🔗 **Source:** [Recipe Title on Site](URL).\n"
+            "3. Always add the chosen carb side directly into the ingredients list.\n"
+            "4. Format instructions as numbered steps (1., 2., 3.)."
         ),
     },
     "Svenska": {
@@ -163,11 +163,11 @@ T = {
         "saved_ok": "Sparat ✅",
         # AI Language Prompting
         "ai_lang_instruction": (
-            "Regler för recept och formatering:\n"
-            "1. KOLHYDRATER/TILLBEHÖR: Varje måltid måste paras ihop med ett passande kolhydrattillbehör (t.ex. jasminris, kokt potatis, pasta, couscous, bulgur, nudlar). "
-            "VIKTIGT: Du MÅSTE lägga till detta kolhydrattillbehör direkt i måltidens ingredienslista med korrekt mängd (t.ex. '800 g potatis' eller '4 portioner basmatiris') så att det automatiskt hamnar på inköpslistan!\n"
-            "2. NUMRERADE STEG: Skriv ALDRIG instruktioner som ett enda långt stycke. Du MÅSTE dela upp tillagningen i tydliga, numrerade steg (1., 2., 3., etc.) med en tom rad mellan varje steg.\n"
-            "3. SPRÅK: Hela svaret, inklusive receptnamn, ingredienser (vispgrädde, lök, etc.) och instruktioner, MÅSTE vara på svenska."
+            "Käll- och receptregler:\n"
+            "1. Välj endast beprövade recept från Köket.se, ICA.se, Arla.se, Coop.se, Tasteline eller Zeinas Kitchen.\n"
+            "2. I slutet av varje måltids instruktioner, inkludera den direkta länken till receptet: 🔗 **Receptkälla:** [Receptnamn på Sajt](URL).\n"
+            "3. Lägg alltid till det valda kolhydrattillbehöret i ingredienslistan.\n"
+            "4. Dela upp instruktionerna i numrerade steg (1., 2., 3.)."
         ),
     },
 }
@@ -662,14 +662,6 @@ with tab_plan, db.SessionLocal() as s:
                         else m.instructions
                     )
                     st.markdown(formatted_steps)
-
-                    q = quote_plus(m.title)
-                    link_list = [f"[{name}]({url.format(q)})" for name, url in RECIPE_SITES.items()]
-                    label = (
-                        "🔍 Recept på:" if lang == "Svenska" else "🔍 View recipe on:"
-                    )
-
-                    st.markdown(f"**{label}** " + " · ".join(link_list))
 
                     options = list(dict.fromkeys(categories + [m.category]))
                     # Categories translated with format_func

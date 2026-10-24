@@ -243,15 +243,16 @@ Ogillar - undvik: {profile.dislikes or "inga"}.
 Önskemål: {profile.preferences or "inga"}.
 Max tillagningstid: {profile.max_minutes} minuter.
 
-Regler för utdata (VIKTIGT):
-- RIKTIGA RECEPT: Du får ALDRIG hitta på egna fiktiva recept! Alla rätter MÅSTE vara beprövade recept hämtade från etablerade svenska matsajter som Köket.se, ICA.se, Arla.se, Recept.se, Tasteline eller Zeinas Kitchen (t.ex. klassisk Korv Stroganoff, Fiskgratäng med dill, Kyckling i krämig dragonsås, Flygande Jacob, Köttbullar med gräddsås).
+Regler för receptval och länkar (KRITISKT):
+- RIKTIGA RECEPT: Du MÅSTE välja faktiska, publicerade recept från etablerade svenska receptsajter: Köket.se, ICA.se, Arla.se, Coop.se, Tasteline.se eller Zeinas Kitchen (zeinaskitchen.se). Hitta ALDRIG på egna fiktiva rätter!
+- DIREKTLÄNK TILL KÄLLA: I slutet av varje måltids 'instructions' MÅSTE du ange den direkta källänken till originalreceptet på formatet:
+🔗 **Receptkälla:** [Receptets namn på Webbplatsen](faktisk-direktlänk-till-receptet)
 - SPRÅK: Skriv ALLA receptnamn, instruktioner och ingredienser helt på svenska.
-- KOLHYDRAT/TILLBEHÖR: Varje måltid MÅSTE paras ihop med ett passande kolhydrattillbehör som det står på hemsidan (t.ex. jasminris, potatis, pasta, couscous, nudlar, bulgur). Du MÅSTE lägga till detta kolhydrattillbehör direkt i ingredienslistan med mängd beräknad för {profile.people} personer så att det hamnar på inköpslistan!
+- KOLHYDRAT/TILLBEHÖR: Varje måltid MÅSTE paras ihop med ett passande kolhydrattillbehör som MÅSTE inkluderas i ingredienslistan för {profile.people} personer så att det hamnar på inköpslistan.
 - Mängder är anpassade för {profile.people} personer i metriska enheter: g, kg, dl, l, st, msk, tsk.
-- ingredienser måste vara exakt som det står på receptet.
-- Använd samma namn och enhet för samma ingrediens i varje måltid så att inköpslistan kan summera dem.
+- Använd exakt ingrediensnamn som det står på receptet.
 - aisle MÅSTE vara en av följande: {", ".join(AISLES)}.
-- instructions: Ska vara uppdelade i tydligt numrerade steg (1., 2., 3., etc.) med en tom rad mellan varje steg. Skriv ALDRIG i ett enda stycke."""
+- instructions: Korta numrerade steg (1., 2., 3.) följt av en tom rad och den klickbara länken till receptet på källsajten."""
     else:
         return f"""Household: {profile.people} people.
 STRICT allergies - never use these or any ingredient containing them: {profile.allergies or "none"}.
@@ -259,16 +260,16 @@ Dislikes - avoid: {profile.dislikes or "none"}.
 Preferences: {profile.preferences or "none"}.
 Max cooking time: {profile.max_minutes} minutes.
 
-Output rules (CRITICAL):
-- REAL RECIPES: You should never make your own recipes. All recipes must be real, proven recipes from established swedish website such as Köket.se, ica.se, arla.se, coop.se, tasteline or zeinaskitchen.se (for example, Classic Korvstroganooff, Fishgratin with dill, Chichen with creamy dragon sauce, Flygande Jacob, meatballs with creamsauce.)
-- LANGUAGE: Translate all titles, ingredients, and instructions in English.
-- CARBOHYDRATE SIDE: Every meal MUST pair with an ideal carbohydrate side dish (e.g. rice, potatoes, pasta, noodles, couscous). You MUST include this carbohydrate side directly in the ingredients list with proper quantities for {profile.people} people so it gets added to the grocery list!
+Recipe Selection & Link Rules (CRITICAL):
+- REAL RECIPES: You MUST choose real, published recipes from established Swedish recipe websites: Köket.se, ICA.se, Arla.se, Coop.se, Tasteline.se, or Zeinas Kitchen (zeinaskitchen.se). Never invent fictional dishes!
+- DIRECT SOURCE LINK: At the end of each meal's 'instructions', you MUST provide the direct source link to the recipe in this format:
+🔗 **Source:** [Recipe Title on SiteName](actual-direct-url-to-the-recipe)
+- LANGUAGE: Write all titles, ingredients, and instructions in English.
+- CARBOHYDRATE SIDE: Every meal MUST pair with an ideal carbohydrate side dish included in the ingredients list for {profile.people} people.
 - Ingredient quantities are for {profile.people} people, in metric units: g, kg, ml, l, pcs, tbsp, tsp.
-- Use exact ingredient names in the recipe.
-- Use the same name and unit for the same ingredient in every meal so the shopping list can add them up.
+- Use exact same ingredients name as it states in the recipe.
 - aisle must be one of: {", ".join(AISLES)}.
-- instructions: Must be formatted as numbered steps (1., 2., 3., etc.) with an empty line between each step. Never write as a single paragraph."""
-
+- instructions: Short numbered steps (1., 2., 3.) followed by an empty line and the clickable link to the recipe on the source website."""
 
 def _run(api_key, model, prompt, schema, check, on_step=None):
     """Generate -> validate -> ask for a fix, until the checks pass or attempts run out."""
