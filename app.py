@@ -361,67 +361,22 @@ else:
 
 
 # ----------------- Step & Recipe Helpers -----------------
+def extract_recipe_url(text: str) -> str | None:
+    """Extracts the direct recipe URL from the instructions if present."""
+    if not text:
+        return None
+    # Look for full web links (http or https)
+    match = re.search(r"(https?://[^\s\)\>\]]+)", text)
+    return match.group(1).rstrip(".,;") if match else None
+
 def format_steps(text: str) -> str:
-    """Forces instructions into a clean, spaced-out numbered list."""
+    """Formats steps into a clean numbered list while preserving links."""
     if not text:
         return ""
-    # Clean away any broken links that Gemini might have written in the instructions
-    clean_text = re.sub(r"\[.*?\]\(http.*?\)", "", text)
-    clean_text = re.sub(r"https?://\S+", "", clean_text)
-    clean_text = re.sub(r"🔗.*", "", clean_text).strip()
-
-    # If steps are on a single line, split them
-    clean_text = re.sub(r"(?<!\n)(\b\d+[\.\)])\s*", r"\n\1 ", clean_text)
-
-    # Separate each step with double line breaks for Markdown
-    lines = [line.strip() for line in clean_text.splitlines() if line.strip()]
+    # Ensure step numbers start on separate lines with empty space
+    formatted = re.sub(r"(?<!\n)(\b\d+[\.\)])\s*", r"\n\1 ", text)
+    lines = [line.strip() for line in formatted.splitlines() if line.strip()]
     return "\n\n".join(lines)
-
-
-def get_recipe_source_link(title: str, instructions: str) -> tuple[str, str]:
-    """Generates a 100% reliable link that opens the exact recipe on the source site."""
-    clean_title = re.sub(r"\(.*?\)", "", title).strip()
-    q = quote_plus(f"recept {clean_title}")
-
-    # Targeted site searches that bypass broken website scripts
-    sources = {
-        "ica": ("ICA.se", f"https://www.google.com/search?q={q}+site:ica.se"),
-        "köket": (
-            "Köket.se",
-            f"https://www.google.com/search?q={q}+site:koket.se",
-        ),
-        "arla": (
-            "Arla.se",
-            f"https://www.google.com/search?q={q}+site:arla.se",
-        ),
-        "coop": (
-            "Coop.se",
-            f"https://www.google.com/search?q={q}+site:coop.se",
-        ),
-        "zeina": (
-            "Zeinas Kitchen",
-            f"https://www.google.com/search?q={q}+site:zeinaskitchen.se",
-        ),
-        "tasteline": (
-            "Tasteline",
-            f"https://www.google.com/search?q={q}+site:tasteline.com",
-        ),
-    }
-
-    combined = (instructions + " " + title).lower()
-    for key, (site_name, url) in sources.items():
-        if key in combined:
-            return site_name, url
-
-    return "Köket.se", f"https://www.google.com/search?q={q}+site:koket.se"
-
-    combined = (instructions + " " + title).lower()
-    for key, (site_name, url) in sources.items():
-        if key in combined:
-            return site_name, url
-
-    return "Köket.se", f"https://www.koket.se/sok?q={q}"
-
 
 def cfg(key: str, default: str = "") -> str:
     try:
@@ -703,17 +658,28 @@ with tab_plan, db.SessionLocal() as s:
                         )
                     )
                     st.markdown(f"**{t['steps']}**")
+
+                    # 1. Display full verbatim steps and any inline source link
                     st.markdown(format_steps(m.instructions))
 
-                    site_name, site_url = get_recipe_source_link(
-                        m.title, m.instructions
-                    )
-                    btn_label = (
-                        f"📖 Öppna originalreceptet på {site_name} ↗"
-                        if lang == "Svenska"
-                        else f"📖 Open original recipe on {site_name} ↗"
-                    )
-                    st.link_button(btn_label, site_url)
+                    # 2. Extract and display the direct source button
+                    direct_url = extract_recipe_url(m.instructions)
+                    if direct_url:
+                        btn_label = (
+                            "📖 Öppna originalreceptet på källsajten ↗"
+                            if lang == "Svenska"
+                            else "📖 Open original recipe on source website ↗"
+                        )
+                        st.link_button(btn_label, direct_url)
+                    else:
+                        # Fallback search if no URL was present in instructions
+                        q = quote_plus(m.title)
+                        st.link_button(
+                            "🔍 Sök originalreceptet ↗"
+                            if lang == "Svenska"
+                            else "🔍 Search recipe ↗",
+                            f"https://www.google.com/search?q=recept+{q}",
+                        )
 
                     options = list(dict.fromkeys(categories + [m.category]))
                     # Categories translated with format_func

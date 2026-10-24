@@ -19,7 +19,6 @@ ALL_CATEGORIES = [
     "rice & noodles",
 ]
 
-# Bilingual Allergen Terms (English + Swedish)
 _DAIRY = [
     "milk",
     "cheese",
@@ -234,6 +233,7 @@ def _allergy_problems(meals: list[MealOut], banned: set[str]) -> list[str]:
                     break
     return problems
 
+
 def _household_rules(profile, is_swedish: bool) -> str:
     if is_swedish:
         return f"""Hushåll: {profile.people} personer.
@@ -242,16 +242,15 @@ Ogillar - undvik: {profile.dislikes or "inga"}.
 Önskemål: {profile.preferences or "inga"}.
 Max tillagningstid: {profile.max_minutes} minuter.
 
-Regler för receptval och instruktioner (KRITISKT):
-- RIKTIGA RECEPT: Du MÅSTE välja faktiska, beprövade recept från etablerade svenska matsajter: Köket.se, ICA.se, Arla.se, Coop.se, Tasteline eller Zeinas Kitchen.
-- AUTENTISKA STEG: Skriv ut de FULLSTÄNDIGA, DETALJERADE tillagningsstegen exakt så som rätten tillagas i originalreceptet. Du får INTE sammanfatta, korta ner eller förenkla bort steg!
-- FORMAT PÅ STEG: Varje steg MÅSTE vara ett eget numrerat stycke (1., 2., 3., osv.) med en tom rad mellan varje steg så att det blir en tydlig lista.
-- KÄLLHÄNVISNING: Avsluta instruktionerna med att ange källan som ren text på en egen rad, t.ex: "Källa: ICA.se" eller "Källa: Köket.se". Skriv ALDRIG ut påhittade URL-adresser.
-- SPRÅK: Skriv ALLA receptnamn, instruktioner och ingredienser helt på svenska.
-- KOLHYDRAT/TILLBEHÖR: Varje måltid MÅSTE paras ihop med ett passande kolhydrattillbehör som MÅSTE inkluderas i ingredienslistan för {profile.people} personer.
-- Mängder är anpassade för {profile.people} personer i metriska enheter: g, kg, dl, l, st, msk, tsk.
-- Använd tydliga ingrediensnamn på svenska ("gul lök", "kycklingfilé", "krossade tomater").
-- aisle MÅSTE vara en av följande: {", ".join(AISLES)}."""
+KRITISKA REGLER FÖR RECEPT OCH KÄLLOR:
+1. SÖK OCH VÄLJ VERKLIGA RECEPT: Du MÅSTE söka på webben och välja faktiska, existerande recept från dessa sajter: koket.se, ica.se, arla.se, coop.se, zeinaskitchen.se, tasteline.com, eller recept.se. Hitta ALDRIG på egna recept!
+2. EXAKT TITEL: Receptets titel ('title') MÅSTE vara exakt ordagrann som den heter på källsidan. Skriv INTE om eller förenkla titeln.
+3. EXAKTA STEG (INGEN OMFORMULERING): Skriv av tillagningsstegen EXAKT så som de står i originalreceptet. Du får INTE sammanfatta, korta ner eller formulera om stegen! Varje steg MÅSTE vara numrerat (1., 2., 3., etc.) med en tom rad mellan varje steg.
+4. DIREKTLÄNK TILL KÄLLAN: I slutet av 'instructions' på egen rad, MÅSTE du ange den fullständiga, exakta URL-länken till receptet på källsidan på formatet:
+🔗 **Receptkälla:** https://www.sajt.se/...
+5. SPRÅK: All text ska vara på svenska.
+6. KOLHYDRAT: Inkludera passande kolhydrattillbehör i ingredienslistan för {profile.people} personer.
+7. aisle MÅSTE vara en av: {", ".join(AISLES)}."""
     else:
         return f"""Household: {profile.people} people.
 STRICT allergies - never use these or any ingredient containing them: {profile.allergies or "none"}.
@@ -259,19 +258,30 @@ Dislikes - avoid: {profile.dislikes or "none"}.
 Preferences: {profile.preferences or "none"}.
 Max cooking time: {profile.max_minutes} minutes.
 
-Recipe Selection & Instructions Rules (CRITICAL):
-- REAL RECIPES: You MUST choose real, published recipes from established Swedish recipe websites (Köket.se, ICA.se, Arla.se, Coop.se, Tasteline, or Zeinas Kitchen).
-- AUTHENTIC STEPS: Provide the FULL, DETAILED cooking steps exactly as prepared in the authentic recipe. Do NOT summarize, shorten, or omit steps!
-- STEP FORMAT: Every step MUST be a separate numbered item (1., 2., 3., etc.) with an empty line between each step.
-- SOURCE ATTRIBUTION: End the instructions with the source as plain text on its own line (e.g. "Source: ICA.se"). Never write fake URLs.
-- LANGUAGE: Write all titles, ingredients, and instructions in English.
-- CARBOHYDRATE SIDE: Every meal MUST pair with an ideal carbohydrate side dish included in the ingredients list for {profile.people} people.
-- aisle must be one of: {", ".join(AISLES)}."""
+CRITICAL RULES FOR RECIPES AND SOURCES:
+1. SEARCH AND PICK REAL RECIPES: You MUST search the web and choose real, existing recipes from: koket.se, ica.se, arla.se, coop.se, zeinaskitchen.se, tasteline.com, or recept.se. Never invent fictional dishes!
+2. EXACT TITLE: The title ('title') MUST be exact and verbatim as on the source recipe website. Do NOT rewrite or rephrase.
+3. EXACT PROCEDURES: Transcribe the cooking steps EXACTLY as written in the source recipe. Do NOT summarize, shorten, or rewrite. Format strictly as numbered steps (1., 2., 3., etc.) with an empty line between steps.
+4. DIRECT SOURCE URL: At the end of 'instructions' as its own row, provide the complete direct URL to the recipe:
+🔗 **Source:** https://www.sitename.se/...
+5. LANGUAGE: Write all titles, ingredients, and instructions in English.
+6. CARBOHYDRATE SIDE: Include an appropriate carbohydrate side in the ingredients list for {profile.people} people.
+7. aisle must be one of: {", ".join(AISLES)}."""
+
 
 def _run(api_key, model, prompt, schema, check, on_step=None):
     """Generate -> validate -> ask for a fix, until the checks pass or attempts run out."""
     client = genai.Client(api_key=api_key)
     problems, result = [], None
+
+    # Enable Google Search Grounding so Gemini browses the live web for exact recipes and real URLs
+    config = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=schema,
+        temperature=0.2,  # Low temperature prevents paraphrasing and hallucinated links
+        tools=[types.Tool(google_search=types.GoogleSearch())],
+    )
+
     for attempt in range(1, MAX_ATTEMPTS + 1):
         text = prompt
         if problems:
@@ -282,12 +292,7 @@ def _run(api_key, model, prompt, schema, check, on_step=None):
         resp = client.models.generate_content(
             model=model,
             contents=text,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=schema,
-                temperature=0.7,
-                thinking_config=types.ThinkingConfig(thinking_level="low"),
-            ),
+            config=config,
         )
         result = (
             resp.parsed
@@ -321,12 +326,11 @@ def plan_meals(
     categories = _categories(profile)
     banned = _banned_terms(profile.allergies or "")
 
-    prompt = f"""You are a friendly home-cooking meal planner.
+    prompt = f"""You are a professional recipe research meal planner.
 Create a {days}-day plan starting {start:%A %d %B %Y}.
 For every day create exactly one meal for each of: {", ".join(meal_types)}.
 Rotate between these categories, spread evenly: {", ".join(categories)}.
 Never use the same category on two consecutive days for the same meal type, and never repeat a dish.
-{"Lunches should be lighter and quick." if "lunch" in meal_types else ""}
 Special request this time: {note or "none"}.
 
 {_household_rules(profile, is_swedish)}
@@ -358,13 +362,6 @@ Special request this time: {note or "none"}.
             problems.append(
                 f"Invalid categories {sorted(bad)}; use only {categories}."
             )
-        used = {m.category.lower() for m in plan.meals}
-        if len(expected) >= len(categories) and (
-            unused := [c for c in categories if c not in used]
-        ):
-            problems.append(
-                f"These categories are never used: {', '.join(unused)}."
-            )
 
         titles = [m.title.lower() for m in plan.meals]
         if dups := {t for t in titles if titles.count(t) > 1}:
@@ -391,7 +388,7 @@ def swap_meal(
     banned = _banned_terms(profile.allergies or "")
     taken = {t.lower() for t in existing_titles}
 
-    prompt = f"""You are a friendly home-cooking meal planner.
+    prompt = f"""You are a professional recipe research meal planner.
 Suggest ONE {meal_type} in the category "{category}".
 It must be different from these dishes already in the plan: {", ".join(existing_titles)}.
 
