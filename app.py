@@ -8,15 +8,15 @@ os.environ.pop("http_proxy", None)
 os.environ.pop("https_proxy", None)
 
 from datetime import date, timedelta
-from urllib.parse import quote_plus
 import hmac
 import json
+import re
+from urllib.parse import quote_plus
 import agent
 import db
 from db import GroceryItem
 from sqlalchemy import delete, update
 import streamlit as st
-
 
 st.set_page_config(page_title="Meal Planner", page_icon="🍽️")
 
@@ -28,7 +28,7 @@ T = {
         "wrong_pw": "Wrong password",
         "no_api_key": "Add GEMINI_API_KEY to .streamlit/secrets.toml to generate plans.",
         "tabs": ["📅 Plan", "🛒 Groceries", "⚙️ Settings"],
-        # In T["English"]:
+        # Theme
         "theme_label": "Theme",
         "theme_light": "☀️ Light",
         "theme_dark": "🌙 Dark",
@@ -91,9 +91,9 @@ T = {
         "ai_lang_instruction": (
             "Source & Recipe Rules:\n"
             "1. Pick only established recipes from Köket.se, ICA.se, Arla.se, Coop.se, Tasteline, or Zeinas Kitchen.\n"
-            "2. At the end of each meal's instructions, include the direct link to the recipe: 🔗 **Source:** [Recipe Title on Site](URL).\n"
+            "2. Mention the source at the end of instructions (e.g. 'Source: Köket.se'). Do not invent fake URLs.\n"
             "3. Always add the chosen carb side directly into the ingredients list.\n"
-            "4. Format instructions as numbered steps (1., 2., 3.)."
+            "4. Format instructions strictly as numbered steps (1., 2., 3.)."
         ),
     },
     "Svenska": {
@@ -102,7 +102,7 @@ T = {
         "wrong_pw": "Fel lösenord",
         "no_api_key": "Lägg till GEMINI_API_KEY i .streamlit/secrets.toml för att skapa planer.",
         "tabs": ["📅 Måltidsplan", "🛒 Inköpslista", "⚙️ Inställningar"],
-         # In T["Svenska"]:
+        # Theme
         "theme_label": "Tema",
         "theme_light": "☀️ Ljust",
         "theme_dark": "🌙 Mörkt",
@@ -165,9 +165,9 @@ T = {
         "ai_lang_instruction": (
             "Käll- och receptregler:\n"
             "1. Välj endast beprövade recept från Köket.se, ICA.se, Arla.se, Coop.se, Tasteline eller Zeinas Kitchen.\n"
-            "2. I slutet av varje måltids instruktioner, inkludera den direkta länken till receptet: 🔗 **Receptkälla:** [Receptnamn på Sajt](URL).\n"
+            "2. Ange källans namn i slutet av instruktionerna (t.ex. 'Källa: Köket.se'). Skriv inte ut fiktiva webbadresser.\n"
             "3. Lägg alltid till det valda kolhydrattillbehöret i ingredienslistan.\n"
-            "4. Dela upp instruktionerna i numrerade steg (1., 2., 3.)."
+            "4. Dela upp instruktionerna strikt i numrerade steg (1., 2., 3.)."
         ),
     },
 }
@@ -210,17 +210,6 @@ CATEGORY_NAMES = {
     },
 }
 
-RECIPE_SITES = {
-    "Köket": "https://www.koket.se/sok?q={}",
-    "ICA": "https://www.google.com/search?q=site:ica.se+{}",
-    "Arla": "https://www.arla.se/recept/sok/?q={}",
-    "Coop": "https://www.coop.se/recept/sok/?q={}",
-    "Tasteline": "https://www.tasteline.com/?s={}",
-    "Zeina's": "https://zeinaskitchen.se/?s={}",
-    "Recepten": "https://recepten.se/?s={}",
-    "Recept": "https://recept.se/?s={}",
-}
-
 
 def fmt_category(cat: str, language: str) -> str:
     emoji = EMOJI.get(cat, "🍽️")
@@ -230,7 +219,7 @@ def fmt_category(cat: str, language: str) -> str:
 
 AISLE_NAMES = {
     "English": {
-        "Fruits & Vegies": "🥦 Produce",
+        "Produce": "🥦 Produce",
         "Meat & Seafood": "🥩 Meat & Seafood",
         "Meat": "🥩 Meat",
         "Poultry": "🍗 Poultry",
@@ -297,6 +286,7 @@ def format_day_date(d: date, lang: str) -> str:
         return f"{WEEKDAYS_SV[d.weekday()]} {d.day} {MONTHS_SV[d.month - 1]}"
     return d.strftime("%A %d %b")
 
+
 # Language selection in sidebar (Svenska as default)
 lang = st.sidebar.selectbox(
     "🌐 Språk / Language", ["Svenska", "English"], index=0
@@ -315,16 +305,13 @@ theme_mode = st.sidebar.radio(
 if theme_mode == "dark":
     dark_css = """
     <style>
-        /* Main background and text */
         .stApp, header[data-testid="stHeader"] {
             background-color: #0e1117 !important;
             color: #fafafa !important;
         }
-        /* Sidebar styling */
         section[data-testid="stSidebar"] {
             background-color: #161b22 !important;
         }
-        /* Card / Expander styling */
         .streamlit-expanderHeader {
             background-color: #1f242c !important;
             color: #fafafa !important;
@@ -334,13 +321,11 @@ if theme_mode == "dark":
             border: 1px solid #30363d !important;
             border-radius: 8px !important;
         }
-        /* Form inputs & text fields */
         input, textarea, select, div[data-baseweb="select"] {
             background-color: #21262d !important;
             color: #fafafa !important;
             border-color: #30363d !important;
         }
-        /* Tabs styling */
         button[data-baseweb="tab"] {
             color: #8b949e !important;
         }
@@ -354,7 +339,6 @@ if theme_mode == "dark":
 else:
     light_css = """
     <style>
-        /* Main background and clean crisp look */
         .stApp, header[data-testid="stHeader"] {
             background-color: #f8f9fa !important;
             color: #1a1a1a !important;
@@ -362,7 +346,6 @@ else:
         section[data-testid="stSidebar"] {
             background-color: #ffffff !important;
         }
-        /* Card / Expander styling */
         .streamlit-expanderHeader {
             background-color: #ffffff !important;
             color: #1a1a1a !important;
@@ -377,6 +360,46 @@ else:
     st.markdown(light_css, unsafe_allow_html=True)
 
 
+# ----------------- Step & Recipe Helpers -----------------
+def format_steps(text: str) -> str:
+    """Forces instructions into a clean, spaced-out numbered list."""
+    if not text:
+        return ""
+    # Clean away any broken links that Gemini might have written in the instructions
+    clean_text = re.sub(r"\[.*?\]\(http.*?\)", "", text)
+    clean_text = re.sub(r"https?://\S+", "", clean_text)
+    clean_text = re.sub(r"🔗.*", "", clean_text).strip()
+
+    # If steps are on a single line, split them
+    clean_text = re.sub(r"(?<!\n)(\b\d+[\.\)])\s*", r"\n\1 ", clean_text)
+
+    # Separate each step with double line breaks for Markdown
+    lines = [line.strip() for line in clean_text.splitlines() if line.strip()]
+    return "\n\n".join(lines)
+
+
+def get_recipe_source_link(title: str, instructions: str) -> tuple[str, str]:
+    """Builds a verified, working search link on Swedish food portals."""
+    clean_title = re.sub(r"\(.*?\)", "", title).strip()
+    q = quote_plus(clean_title)
+
+    sources = {
+        "köket": ("Köket.se", f"https://www.koket.se/sok?q={q}"),
+        "ica": ("ICA.se", f"https://www.ica.se/recept/sok/?phrase={q}"),
+        "arla": ("Arla.se", f"https://www.arla.se/recept/sok/?q={q}"),
+        "coop": ("Coop.se", f"https://www.coop.se/recept/sok/?q={q}"),
+        "zeina": ("Zeinas Kitchen", f"https://zeinaskitchen.se/?s={q}"),
+        "tasteline": ("Tasteline", f"https://www.tasteline.com/?s={q}"),
+    }
+
+    combined = (instructions + " " + title).lower()
+    for key, (site_name, url) in sources.items():
+        if key in combined:
+            return site_name, url
+
+    return "Köket.se", f"https://www.koket.se/sok?q={q}"
+
+
 def cfg(key: str, default: str = "") -> str:
     try:
         if key in st.secrets:
@@ -384,6 +407,7 @@ def cfg(key: str, default: str = "") -> str:
     except Exception:
         pass
     return os.getenv(key, default)
+
 
 def setup() -> bool:
     db.init_db(cfg("DATABASE_URL", "sqlite:///meal_planner.db"))
@@ -496,7 +520,7 @@ setup()
 require_password()
 
 API_KEY = cfg("GEMINI_API_KEY")
-MODEL = cfg("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL = cfg("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
 st.title(t["title"])
 if not API_KEY:
@@ -597,7 +621,7 @@ with tab_plan, db.SessionLocal() as s:
                 )
             )
             st.markdown(f"**{t['steps']}**")
-            st.markdown(salad.get("instructions", "").replace("\n", "\n\n"))
+            st.markdown(format_steps(salad.get("instructions", "")))
 
             col_s1, col_s2 = st.columns(2)
             if col_s1.button(t["add_salad_groceries"]):
@@ -656,12 +680,22 @@ with tab_plan, db.SessionLocal() as s:
                         )
                     )
                     st.markdown(f"**{t['steps']}**")
-                    formatted_steps = (
-                        m.instructions.replace("\n", "\n\n")
-                        if "\n\n" not in m.instructions
-                        else m.instructions
+
+                    # 1. Clean enumerated cooking steps
+                    st.markdown(format_steps(m.instructions))
+
+                    # 2. Reliable direct recipe link
+                    site_name, site_url = get_recipe_source_link(
+                        m.title, m.instructions
                     )
-                    st.markdown(formatted_steps)
+                    link_label = (
+                        "Öppna originalreceptet på"
+                        if lang == "Svenska"
+                        else "Open original recipe on"
+                    )
+                    st.markdown(
+                        f"🔗 **[{link_label} {site_name} ↗]({site_url})**"
+                    )
 
                     options = list(dict.fromkeys(categories + [m.category]))
                     # Categories translated with format_func

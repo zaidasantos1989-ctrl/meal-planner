@@ -243,16 +243,15 @@ Ogillar - undvik: {profile.dislikes or "inga"}.
 Önskemål: {profile.preferences or "inga"}.
 Max tillagningstid: {profile.max_minutes} minuter.
 
-Regler för receptval och länkar (KRITISKT):
-- RIKTIGA RECEPT: Du MÅSTE välja faktiska, publicerade recept från etablerade svenska receptsajter: Köket.se, ICA.se, Arla.se, Coop.se, Tasteline.se eller Zeinas Kitchen (zeinaskitchen.se). Hitta ALDRIG på egna fiktiva rätter!
-- DIREKTLÄNK TILL KÄLLA: I slutet av varje måltids 'instructions' MÅSTE du ange den direkta källänken till originalreceptet på formatet:
-🔗 **Receptkälla:** [Receptets namn på Webbplatsen](faktisk-direktlänk-till-receptet)
+Regler för receptval och formatering (KRITISKT):
+- RIKTIGA RECEPT: Du MÅSTE välja faktiska, beprövade recept från etablerade svenska matsajter (Köket.se, ICA.se, Arla.se, Coop.se, Tasteline eller Zeinas Kitchen). Hitta ALDRIG på egna recept!
+- KÄLLANVISNING: I slutet av instruktionerna, ange alltid källan som text (t.ex. 'Källa: Köket.se' eller 'Källa: ICA.se'). Skriv ALDRIG ut påhittade URL-adresser.
 - SPRÅK: Skriv ALLA receptnamn, instruktioner och ingredienser helt på svenska.
 - KOLHYDRAT/TILLBEHÖR: Varje måltid MÅSTE paras ihop med ett passande kolhydrattillbehör som MÅSTE inkluderas i ingredienslistan för {profile.people} personer så att det hamnar på inköpslistan.
 - Mängder är anpassade för {profile.people} personer i metriska enheter: g, kg, dl, l, st, msk, tsk.
-- Använd exakt ingrediensnamn som det står på receptet.
+- Använd korta, tydliga ingrediensnamn på svenska ("gul lök", "kycklingfilé", "krossade tomater", "basmatiris").
 - aisle MÅSTE vara en av följande: {", ".join(AISLES)}.
-- instructions: Korta numrerade steg (1., 2., 3.) följt av en tom rad och den klickbara länken till receptet på källsajten."""
+- instructions: MÅSTE vara en tydligt numrerad lista där varje steg börjar på en ny rad med '1. ', '2. ', '3. '."""
     else:
         return f"""Household: {profile.people} people.
 STRICT allergies - never use these or any ingredient containing them: {profile.allergies or "none"}.
@@ -260,16 +259,15 @@ Dislikes - avoid: {profile.dislikes or "none"}.
 Preferences: {profile.preferences or "none"}.
 Max cooking time: {profile.max_minutes} minutes.
 
-Recipe Selection & Link Rules (CRITICAL):
-- REAL RECIPES: You MUST choose real, published recipes from established Swedish recipe websites: Köket.se, ICA.se, Arla.se, Coop.se, Tasteline.se, or Zeinas Kitchen (zeinaskitchen.se). Never invent fictional dishes!
-- DIRECT SOURCE LINK: At the end of each meal's 'instructions', you MUST provide the direct source link to the recipe in this format:
-🔗 **Source:** [Recipe Title on SiteName](actual-direct-url-to-the-recipe)
+Recipe Selection & Formatting Rules (CRITICAL):
+- REAL RECIPES: You MUST choose real, published recipes from established Swedish recipe websites (Köket.se, ICA.se, Arla.se, Coop.se, Tasteline, or Zeinas Kitchen). Never invent fictional dishes!
+- SOURCE ATTRIBUTION: At the end of the instructions, always mention the source name (e.g. 'Source: Köket.se' or 'Source: ICA.se'). Never write out fake URL links.
 - LANGUAGE: Write all titles, ingredients, and instructions in English.
 - CARBOHYDRATE SIDE: Every meal MUST pair with an ideal carbohydrate side dish included in the ingredients list for {profile.people} people.
 - Ingredient quantities are for {profile.people} people, in metric units: g, kg, ml, l, pcs, tbsp, tsp.
-- Use exact same ingredients name as it states in the recipe.
 - aisle must be one of: {", ".join(AISLES)}.
-- instructions: Short numbered steps (1., 2., 3.) followed by an empty line and the clickable link to the recipe on the source website."""
+- instructions: MUST be formatted as a numbered list with each step starting on a new line with '1. ', '2. ', '3. '."""
+
 
 def _run(api_key, model, prompt, schema, check, on_step=None):
     """Generate -> validate -> ask for a fix, until the checks pass or attempts run out."""
@@ -362,9 +360,13 @@ Special request this time: {note or "none"}.
                 f"Invalid categories {sorted(bad)}; use only {categories}."
             )
         used = {m.category.lower() for m in plan.meals}
-        if len(expected) >= len(categories) and (unused := [c for c in categories if c not in used]):
-            problems.append(f"These categories are never used: {', '.join(unused)}.")
-                    
+        if len(expected) >= len(categories) and (
+            unused := [c for c in categories if c not in used]
+        ):
+            problems.append(
+                f"These categories are never used: {', '.join(unused)}."
+            )
+
         titles = [m.title.lower() for m in plan.meals]
         if dups := {t for t in titles if titles.count(t) > 1}:
             problems.append(f"Repeated dishes: {', '.join(dups)}.")
