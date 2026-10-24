@@ -372,8 +372,6 @@ def cfg(key: str, default: str = "") -> str:
         pass
     return os.getenv(key, default)
 
-
-@st.cache_resource
 def setup() -> bool:
     db.init_db(cfg("DATABASE_URL", "sqlite:///meal_planner.db"))
     return True
