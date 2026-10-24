@@ -284,9 +284,10 @@ def format_day_date(d: date, lang: str) -> str:
         return f"{WEEKDAYS_SV[d.weekday()]} {d.day} {MONTHS_SV[d.month - 1]}"
     return d.strftime("%A %d %b")
 
-
-# Language selection in sidebar
-lang = st.sidebar.selectbox("🌐 Language / Språk", ["English", "Svenska"])
+# Language selection in sidebar (Svenska as default)
+lang = st.sidebar.selectbox(
+    "🌐 Språk / Language", ["Svenska", "English"], index=0
+)
 t = T[lang]
 
 # ----------------- Theme Switcher -----------------
