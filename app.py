@@ -8,6 +8,7 @@ os.environ.pop("http_proxy", None)
 os.environ.pop("https_proxy", None)
 
 from datetime import date, timedelta
+from urllib.parse import quote_plus
 import hmac
 import json
 import agent
@@ -15,6 +16,7 @@ import db
 from db import GroceryItem
 from sqlalchemy import delete, update
 import streamlit as st
+
 
 st.set_page_config(page_title="Meal Planner", page_icon="🍽️")
 
@@ -208,6 +210,17 @@ CATEGORY_NAMES = {
     },
 }
 
+RECIPE_SITES = {
+    "Köket": "https://www.koket.se/sok?q={}",
+    "ICA": "https://www.google.com/search?q=site:ica.se+{}",
+    "Arla": "https://www.arla.se/recept/sok/?q={}",
+    "Coop": "https://www.coop.se/recept/sok/?q={}",
+    "Tasteline": "https://www.tasteline.com/?s={}",
+    "Zeina's": "https://zeinaskitchen.se/?s={}",
+    "Recepten": "https://recepten.se/?s={}",
+    "Recept": "https://recept.se/?s={}",
+}
+
 
 def fmt_category(cat: str, language: str) -> str:
     emoji = EMOJI.get(cat, "🍽️")
@@ -217,7 +230,7 @@ def fmt_category(cat: str, language: str) -> str:
 
 AISLE_NAMES = {
     "English": {
-        "Produce": "🥦 Produce",
+        "Fruits & Vegies": "🥦 Produce",
         "Meat & Seafood": "🥩 Meat & Seafood",
         "Meat": "🥩 Meat",
         "Poultry": "🍗 Poultry",
@@ -649,6 +662,14 @@ with tab_plan, db.SessionLocal() as s:
                         else m.instructions
                     )
                     st.markdown(formatted_steps)
+
+                    q = quote_plus(m.title)
+                    link_list = [f"[{name}]({url.format(q)})" for name, url in RECIPE_SITES.items()]
+                    label = (
+                        "🔍 Recept på:" if lang == "Svenska" else "🔍 View recipe on:"
+                    )
+
+                    st.markdown(f"**{label}** " + " · ".join(link_list))
 
                     options = list(dict.fromkeys(categories + [m.category]))
                     # Categories translated with format_func
