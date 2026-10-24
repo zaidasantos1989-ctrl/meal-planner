@@ -274,12 +274,13 @@ def _run(api_key, model, prompt, schema, check, on_step=None):
     client = genai.Client(api_key=api_key)
     problems, result = [], None
 
-    # Enable Google Search Grounding so Gemini browses the live web for exact recipes and real URLs
+   # Enable Google Search Grounding so Gemini browses the live web for exact recipes and real URLs
+   # Remove tools=[types.Tool(google_search=types.GoogleSearch())]
     config = types.GenerateContentConfig(
         response_mime_type="application/json",
         response_schema=schema,
-        temperature=0.2,  # Low temperature prevents paraphrasing and hallucinated links
-        tools=[types.Tool(google_search=types.GoogleSearch())],
+        temperature=0.3,
+        thinking_config=types.ThinkingConfig(thinking_level="low"),
     )
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
