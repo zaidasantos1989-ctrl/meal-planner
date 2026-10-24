@@ -287,7 +287,8 @@ def _run(api_key, model, prompt, schema, check, on_step=None):
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=schema,
-                temperature=0.9,
+                temperature=0.7,
+                thinking_config=types.ThinkingConfig(thinking_level="low"),
             ),
         )
         result = (
@@ -360,12 +361,9 @@ Special request this time: {note or "none"}.
                 f"Invalid categories {sorted(bad)}; use only {categories}."
             )
         used = {m.category.lower() for m in plan.meals}
-        if len(expected) >= len(categories) and (
-            unused := [c for c in categories if c not in used]
-        ):
-            problems.append(
-                f"These categories are never used: {', '.join(unused)}."
-            )
+        if len(expected) >= len(categories) and (unused := [c for c in categories if c not in used]):
+            problems.append(f"These categories are never used: {', '.join(unused)}.")
+                    
         titles = [m.title.lower() for m in plan.meals]
         if dups := {t for t in titles if titles.count(t) > 1}:
             problems.append(f"Repeated dishes: {', '.join(dups)}.")
