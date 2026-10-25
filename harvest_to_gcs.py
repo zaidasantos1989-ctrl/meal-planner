@@ -10,7 +10,9 @@ for k in [
 ]:
     os.environ.pop(k, None)
 
+from collections import defaultdict
 import json
+import random
 import re
 import time
 from urllib.parse import urljoin, urlparse
@@ -27,20 +29,156 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 session = requests.Session()
 session.trust_env = False
 
-# ----------------- Automated Discovery Hubs -----------------
-# The script will visit these hubs and auto-discover recipes
+# ==============================================================================
+# 🎯 ACTIVE HUBS (Verified working URLs)
+# ==============================================================================
 DISCOVERY_HUBS = [
-    "https://zeinaskitchen.se/category/middag/",
+    # Arla (Great working recipe collections)
+    "https://www.arla.se/recept/samling/pasta/",
+    "https://www.arla.se/recept/samling/snabb-middag/",
+    "https://www.arla.se/recept/samling/helgmiddag/",
+    "https://www.arla.se/recept/samling/sondagsmiddag/",
+    "https://www.arla.se/recept/samling/vardag/",
+    "https://www.arla.se/recept/samling/nytt/",
+    "https://www.arla.se/recept/samling/middag/",
+    # Köket.se
+    "https://www.koket.se/mat/typ-av-ratt/grytor",
+    "https://www.koket.se/mat/typ-av-maltid/huvudratter",
+    "https://www.koket.se/mat/typ-av-maltid/vardagsmiddag",
+    # Recepten.se
+    "https://www.recepten.se/kategori/kyckling_kalkon.html",
+    "https://www.recepten.se/kategori/fisk.html",
+    "https://www.recepten.se/kategori/noetkoett.html",
+    "https://www.recepten.se/kategori/flaeskkoett.html",
+    "https://www.recepten.se/kategori/kvaellsmat.html",
+    # Zeina's active working categories
     "https://zeinaskitchen.se/category/kyckling/",
-    "https://zeinaskitchen.se/category/fisk-och-skaldjur/",
-    "https://zeinaskitchen.se/category/kottfars/",
-    "https://www.arla.se/recept/vardag/",
-    "https://www.arla.se/recept/helg/",
+    "https://zeinaskitchen.se/category/vegetariskt/",
+    # ICA
+    "https://www.ica.se/recept/middag/",
+    "https://www.ica.se/recept/huvudratt/",
+    "https://www.ica.se/recept/lordag/",
+    "https://www.ica.se/recept/sondag/",
+    "https://www.ica.se/recept/fredag/",
+    # Tasteline
+    "https://www.tasteline.com/veckomenyer/",
+    # Coop
+    "https://www.coop.se/recept/middag/",
 ]
 
-MAX_RECIPES_PER_RUN = (
-    15  # Harvest 15 recipes at a time to stay within quotas
-)
+# Strict blacklist of non-recipe paths, articles, and assets
+BLOCKED_PATTERNS = [
+    ".css",
+    ".js",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".svg",
+    ".webp",
+    ".ico",
+    ".woff",
+    "wp-content",
+    "wp-includes",
+    "wp-json",
+    "feed",
+    "comments",
+    "om-",
+    "about",
+    "kontakt",
+    "kundservice",
+    "press",
+    "jobb",
+    "hallbarhet",
+    "mejeri",
+    "bonde",
+    "artiklar",
+    "artikel",
+    "produkter",
+    "aktuellt",
+    "guide",
+    "tips",
+    "fakta",
+    "skola",
+    "hur-",
+    "basta-",
+    "inspiration",
+    "veckomeny",
+    "portioner",
+    "tabell",
+    "kategori",
+    "tag",
+    "page/",
+    "#",
+]
+
+# Side dishes and accessories that should NEVER be stored as main dinners
+SIDE_DISH_WORDS = [
+    "potatismos",
+    "stuvade makaroner",
+    "stuvad makaron",
+    "bearnaisesås",
+    "gräddsås",
+    "remouladsås",
+    "dressing",
+    "vitlöksbröd",
+    "pommes frites",
+    "rödvinssås",
+    "tzatziki",
+    "guacamole",
+]
+
+
+def auto_discover_links(hub_url: str, existing_urls: set) -> list[str]:
+    """Scans hub page and extracts ONLY actual recipe article links."""
+    if not hub_url or not hub_url.strip():
+        return []
+
+    print(f"🔎 Scanning hub: {hub_url}...")
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "sv-SE,sv;q=0.9",
+    }
+    try:
+        resp = session.get(hub_url, headers=headers, timeout=15, verify=False)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"  ❌ Could not open hub: {e}")
+        return []
+
+    found_links = re.findall(
+        r"<a\s+[^>]*?href=[\'\"]([^\'\"]+)[\'\"]",
+        resp.text,
+        flags=re.IGNORECASE,
+    )
+
+    base_domain = urlparse(hub_url).netloc
+    recipe_links = []
+
+    for link in found_links:
+        clean_url = urljoin(hub_url, link).split("?")[0].rstrip("/")
+
+        if base_domain not in clean_url:
+            continue
+
+        if any(bad in clean_url.lower() for bad in BLOCKED_PATTERNS):
+            continue
+
+        path = urlparse(clean_url).path.strip("/")
+        if not path or len(path) < 3:
+            continue
+
+        if clean_url not in existing_urls and clean_url not in recipe_links:
+            recipe_links.append(clean_url)
+
+    print(f"  ✨ Found {len(recipe_links)} real recipe links.")
+    return recipe_links
+
+
+MAX_RECIPES_PER_RUN = 60
 
 AISLES = [
     "Produce",
@@ -86,7 +224,7 @@ class HarvestedRecipe(BaseModel):
 
 def get_gcs_bucket():
     bucket_name = st.secrets.get(
-        "GCS_BUCKET_NAME", "meal-planner-recipes-zaida"
+        "GCS_BUCKET_NAME", "meal-planner-recipe"
     )
     info = st.secrets["gcp_service_account"]
     credentials = service_account.Credentials.from_service_account_info(info)
@@ -105,77 +243,51 @@ def clean_html(html: str) -> str:
     return re.sub(r"\s+", " ", text).strip()[:14000]
 
 
-def auto_discover_links(hub_url: str, existing_urls: set) -> list[str]:
-    """Scans hub page and automatically discovers recipe links."""
-    print(f"🔎 Scanning hub: {hub_url}...")
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36",
-        "Accept-Language": "sv-SE,sv;q=0.9",
-    }
-    try:
-        resp = session.get(hub_url, headers=headers, timeout=15, verify=False)
-        resp.raise_for_status()
-    except Exception as e:
-        print(f"  ❌ Could not open hub: {e}")
-        return []
-
-    found = re.findall(r'href=[\'"]?([^\'" >]+)', resp.text)
-    base_domain = urlparse(hub_url).netloc
-    recipe_links = []
-
-    for link in found:
-        full_url = urljoin(hub_url, link).split("?")[0].rstrip("/")
-        if base_domain in full_url:
-            # Exclude non-recipe system pages
-            if not any(
-                skip in full_url
-                for skip in [
-                    "/category/",
-                    "/tag/",
-                    "/page/",
-                    "/om-",
-                    "/kontakt",
-                    "#",
-                    "/artiklar/",
-                ]
-            ):
-                if (
-                    full_url not in existing_urls
-                    and full_url not in recipe_links
-                ):
-                    recipe_links.append(full_url)
-
-    print(f"  ✨ Found {len(recipe_links)} candidate recipe links.")
-    return recipe_links
+def is_likely_recipe(html_text: str) -> bool:
+    """Pre-check: rejects blog posts, portion guides, and about pages before calling Gemini."""
+    lower = html_text.lower()
+    has_ingredients = "ingrediens" in lower
+    has_steps = (
+        "gör så här" in lower
+        or "tillagning" in lower
+        or "instruktion" in lower
+        or "steg för steg" in lower
+        or "så här gör du" in lower
+    )
+    return has_ingredients and has_steps
 
 
-def parse_and_classify_recipe(client, url: str) -> dict:
+def parse_and_classify_recipe(client, url: str) -> dict | None:
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36",
         "Accept-Language": "sv-SE,sv;q=0.9",
     }
     resp = session.get(url, headers=headers, timeout=15, verify=False)
     resp.raise_for_status()
+
+    # Pre-check: If this is an article or guide without recipe steps, SKIP IT immediately!
+    if not is_likely_recipe(resp.text):
+        print(f"  ⏭️ Skipping: Blog/article/guide (no recipe sections found).")
+        return None
+
     page_text = clean_html(resp.text)
 
     prompt = f"""
-    Extract the recipe from this webpage.
+    You are an expert recipe parser.
     URL: {url}
     Content:
     {page_text}
 
-    RULES:
-    1. title: Exact verbatim recipe title.
-    2. protein: One of: chicken, beef, pork, fish, seafood, vegetarian, vegan.
-    3. occasion: Classify accurately:
-       - 'everyday' for quick 20-30 min vardagsmat (korv stroganoff, enkel pasta).
-       - 'weekend' for cozy weekend food (lasagne, grytor, tacos).
-       - 'guest' for elevated dinner party / festmåltid (oxfilé, röding, rödvinssås, gratäng).
-    4. category: One of: pasta, chicken, meat, fish, vegetarian, vegan, soup, salad, rice & noodles.
-    5. instructions: Copy the cooking steps VERBATIM as numbered steps (1., 2., 3., etc.). Do not shorten.
-    6. ingredients: Break down all ingredients. Normalize quantity for exactly 1 person.
-    7. aisle: Must be one of: {", ".join(AISLES)}.
-    8. source_name: Source website name (e.g. Arla.se, Zeinas Kitchen, Köket.se, ICA.se).
+    CRITICAL RULES:
+    1. MAIN MEAL ONLY: This MUST be a full dinner (huvudrätt). If this is only a side dish, condiment, or sauce (e.g. potatismos, stuvade makaroner, bearnaisesås, dressing), return title as 'INVALID_NOT_A_RECIPE'.
+    2. CATEGORY PRECEDENCE:
+       - If it is a soup (soppa, buljong) -> category MUST be 'soup' (NOT vegetarian).
+       - If it is a pasta dish (pasta, spaghetti, lasagne, penne) -> category MUST be 'pasta' (NOT vegetarian).
+       - 'vegetarian' is ONLY for non-pasta, non-soup main dishes (e.g. halloumigryta, biffar, falafel, paj).
+    3. occasion: Classify as 'everyday' (snabb vardagsmat), 'weekend' (mysmat/gryta), or 'guest' (festmåltid).
+    4. instructions: Full verbatim numbered steps (1., 2., 3.). Do not shorten.
+    5. ingredients: Breakdown normalized for 1 person.
+    6. aisle: Must be one of: {", ".join(AISLES)}.
     """
 
     res = client.models.generate_content(
@@ -187,6 +299,34 @@ def parse_and_classify_recipe(client, url: str) -> dict:
         ),
     )
     data = json.loads(res.text)
+    title_lower = data.get("title", "").lower()
+
+    # 1. Reject non-recipes and side dishes
+    if (
+        data.get("title") == "INVALID_NOT_A_RECIPE"
+        or any(w in title_lower for w in SIDE_DISH_WORDS)
+        or len(data.get("ingredients", [])) < 3
+    ):
+        print(f"  ⏭️ Skipping: '{data.get('title')}' is a side dish or non-recipe.")
+        return None
+
+    # 2. Enforce strict category priority in Python
+    if "soppa" in title_lower or "soppa" in url.lower():
+        data["category"] = "soup"
+    elif any(
+        p in title_lower
+        for p in [
+            "pasta",
+            "spagetti",
+            "spaghetti",
+            "lasagne",
+            "penne",
+            "tagliatelle",
+            "makaroner",
+        ]
+    ):
+        data["category"] = "pasta"
+
     data["url"] = url
     return data
 
@@ -206,7 +346,7 @@ def save_to_gcs(bucket, recipe: dict):
         content_type="application/json",
     )
     print(
-        f"  ☁️ Saved to GCS: {blob_path} [{recipe['occasion'].upper()} | {recipe['protein'].upper()}]"
+        f"  ☁️ Saved to GCS: {blob_path} [{recipe['occasion'].upper()} | {recipe['category'].upper()}]"
     )
 
 
@@ -229,23 +369,44 @@ def main():
 
     print(f"📚 Currently {len(existing_urls)} recipes already stored in GCS.")
 
-    # 1. Automatically discover new recipe links from hubs
-    all_candidates = []
+    # 1. Round-robin balanced discovery across websites
+    by_domain = defaultdict(list)
     for hub in DISCOVERY_HUBS:
-        all_candidates.extend(auto_discover_links(hub, existing_urls))
+        links = auto_discover_links(hub, existing_urls)
+        for link in links:
+            domain = urlparse(link).netloc
+            if link not in by_domain[domain]:
+                by_domain[domain].append(link)
 
-    unique_candidates = list(dict.fromkeys(all_candidates))
-    to_process = unique_candidates[:MAX_RECIPES_PER_RUN]
-    print(f"\n🚀 Harvesting {len(to_process)} new recipes into GCS...\n")
+    for domain in by_domain:
+        random.shuffle(by_domain[domain])
+
+    to_process = []
+    domains = list(by_domain.keys())
+    random.shuffle(domains)
+
+    while len(to_process) < MAX_RECIPES_PER_RUN and any(by_domain.values()):
+        for d in domains:
+            if by_domain[d] and len(to_process) < MAX_RECIPES_PER_RUN:
+                to_process.append(by_domain[d].pop(0))
+
+    print(
+        f"\n🚀 Harvesting {len(to_process)} balanced recipes across all websites into GCS...\n"
+    )
 
     added = 0
     for url in to_process:
         try:
             print(f"📥 Parsing: {url}")
             recipe_data = parse_and_classify_recipe(client, url)
+            if recipe_data is None:
+                continue
+
             save_to_gcs(bucket, recipe_data)
             added += 1
-            time.sleep(1)  # Polite 1-second delay
+            print(f"  ✅ Added: {recipe_data['title']}")
+
+            time.sleep(4.2)
         except Exception as e:
             print(f"  ❌ Failed {url}: {e}")
 
