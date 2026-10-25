@@ -23,6 +23,22 @@ ALL_CATEGORIES = [
     "rice & noodles",
 ]
 
+# Side dishes and condiments that should NEVER be selected as a main dinner
+BANNED_MAINS = [
+    "potatismos",
+    "stuvade makaroner",
+    "stuvad makaron",
+    "bearnaisesås",
+    "gräddsås",
+    "remouladsås",
+    "dressing",
+    "vitlöksbröd",
+    "pommes frites",
+    "rödvinssås",
+    "tzatziki",
+    "guacamole",
+]
+
 # Bilingual Allergen Terms
 _DAIRY = [
     "milk",
@@ -224,9 +240,7 @@ def load_recipes_from_gcs() -> list[dict]:
     """Loads all categorized JSON recipes from GCS bucket with safe local fallback."""
     fallback = _load_local_fallback_recipes()
     try:
-        bucket_name = st.secrets.get(
-            "GCS_BUCKET_NAME", "meal-planner-recipes-zaida"
-        )
+        bucket_name = st.secrets.get("GCS_BUCKET_NAME", "meal-planner-recipe")
         info = st.secrets.get("gcp_service_account")
         if not info:
             return fallback
@@ -261,22 +275,60 @@ def _categories(profile) -> list[str]:
 
 
 def _matches_category(recipe: dict, category: str) -> bool:
-    """Matches user category rotation to recipe category and protein tags."""
+    """Matches user category rotation with strict soup, pasta, and side-dish rejection."""
     cat = category.lower()
+    title = recipe.get("title", "").lower()
     r_cat = recipe.get("category", "").lower()
     r_protein = recipe.get("protein", "").lower()
 
+    # 1. Permanently discard side dishes / accessories
+    if any(banned in title for banned in BANNED_MAINS):
+        return False
+
+    # 2. Strict Soup Check
+    if cat == "soup":
+        return r_cat == "soup" or "soppa" in title
+
+    # 3. Strict Pasta Check
+    if cat == "pasta":
+        return r_cat == "pasta" or any(
+            p in title
+            for p in [
+                "pasta",
+                "spagetti",
+                "spaghetti",
+                "lasagne",
+                "penne",
+                "tagliatelle",
+                "makaroner",
+            ]
+        )
+
+    # 4. Vegetarian / Vegan MUST NOT grab soups or pasta dishes
+    if cat in ["vegetarian", "vegan"]:
+        if "soppa" in title or r_cat == "soup":
+            return False
+        if any(
+            p in title
+            for p in ["pasta", "spagetti", "spaghetti", "lasagne", "penne"]
+        ):
+            return False
+        return r_cat in ["vegetarian", "vegan"] or r_protein in [
+            "vegetarian",
+            "vegan",
+        ]
+
+    # 5. Standard proteins (also exclude soups and pastas from pure meat/chicken/fish slots)
+    if "soppa" in title or r_cat == "soup":
+        return False
+
     if r_cat == cat or r_protein == cat:
         return True
-
-    # Broader protein mappings
     if cat == "meat" and r_protein in ["beef", "pork", "meat"]:
         return True
     if cat == "chicken" and r_protein in ["chicken", "poultry"]:
         return True
     if cat == "fish" and r_protein in ["fish", "seafood"]:
-        return True
-    if cat == "vegetarian" and r_protein in ["vegetarian", "vegan"]:
         return True
 
     return False
@@ -285,7 +337,7 @@ def _matches_category(recipe: dict, category: str) -> bool:
 def _filter_recipes(
     recipes: list[dict], profile, category: str = None
 ) -> list[dict]:
-    """Filters recipes by allergies and dislikes."""
+    """Filters recipes by allergies and dislikes, discarding accessories."""
     allergies = [
         a.strip().lower()
         for a in (profile.allergies or "").split(",")
@@ -299,6 +351,11 @@ def _filter_recipes(
 
     available = []
     for r in recipes:
+        title = r.get("title", "").lower()
+        # Drop side dishes
+        if any(banned in title for banned in BANNED_MAINS):
+            continue
+
         if category and not _matches_category(r, category):
             continue
 
@@ -312,8 +369,12 @@ def _filter_recipes(
             available.append(r)
 
     if not available and category:
-        # Fallback to category ignoring strict dislikes
-        available = [r for r in recipes if _matches_category(r, category)]
+        available = [
+            r
+            for r in recipes
+            if _matches_category(r, category)
+            and not any(b in r.get("title", "").lower() for b in BANNED_MAINS)
+        ]
 
     return available if available else recipes
 
@@ -393,7 +454,6 @@ def plan_meals(
                 (wants_festive and (weekday_num == 5 or "lördag" in note_lower))
                 or weekday_num == 5
             ):
-                # Saturday or Guest day -> Bjudmiddag
                 target_pool = guest_pool
                 badge = (
                     "✨ **Bjudmiddag / Helglyx** ✨\n\n"
@@ -401,11 +461,9 @@ def plan_meals(
                     else "✨ **Guest / Dinner Party Special** ✨\n\n"
                 )
             elif m_type == "dinner" and weekday_num in [4, 6]:
-                # Friday or Sunday -> Mysig helgmat
                 target_pool = weekend_pool
                 badge = ""
             else:
-                # Monday to Thursday or lunch -> Snabb vardagsmat
                 target_pool = everyday_pool
                 badge = ""
 
