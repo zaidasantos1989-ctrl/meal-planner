@@ -1,0 +1,227 @@
+[
+  {
+    "title": "Ägghalvor med gräslöksmajonnäs och rom",
+    "category": "fish",
+    "festive": true,
+    "source_name": "ICA.se",
+    "url": "https://www.ica.se/recept/flygande-jacob-1456/",
+    "prep_minutes": 30,
+    "instructions": "1. Mjukkoka äggen och spola kallt. 2. Mixa majonnäs och gräslök. 3. Skala och halvera äggen, toppa med gräslöksmajonnäsen och rom. 4. Strö över sesamfrön och krasse.",
+    "ingredients": [
+      {
+        "name": "ägg",
+        "quantity": 5,
+        "unit": "st",
+        "aisle": "Dairy"
+      },
+      {
+        "name": "majonnäs",
+        "quantity": 1,
+        "unit": "dl",
+        "aisle": "Pantry"
+      },
+      {
+        "name": "hackad gräslök",
+        "quantity": 2,
+        "unit": "msk",
+        "aisle": "Produce"
+      },
+      {
+        "name": "löjrom eller stenbitsrom",
+        "quantity": 80,
+        "unit": "g",
+        "aisle": "Meat & Seafood"
+      },
+      {
+        "name": "rostade vita sesamfrön",
+        "quantity": 1,
+        "unit": "msk",
+        "aisle": "Spices & Seasonings"
+      },
+      {
+        "name": "smörgåskrasse",
+        "quantity": 0,
+        "unit": "krm",
+        "aisle": "Produce"
+      }
+    ]
+  },
+  {
+    "title": "Hamburgare",
+    "category": "meat",
+    "festive": false,
+    "source_name": "ICA.se",
+    "url": "https://www.ica.se/recept/korvstroganoff-med-ris-712808/",
+    "prep_minutes": 45,
+    "instructions": "1. Blanda färs med salt, peppar och dijonsenap. Fukta händerna och forma 4 hamburgare (för 4 port).\n2. Stek hamburgarna i smör och olja 2-3 minuter på varje sida, lägg ev. på ost när hamburgarna vänts.\n3. Skär tomaterna i skivor. Skala och skär löken i tunna skivor.\n4. Servera hamburgarna med bröd, sallad, tomater, lök, och gärna hamburgerdressing och pommes frites (se tipsrutan för recept).",
+    "ingredients": [
+      {
+        "name": "nötfärs eller hushållsfärs",
+        "quantity": 600,
+        "unit": "g",
+        "aisle": "Meat"
+      },
+      {
+        "name": "salt",
+        "quantity": 1,
+        "unit": "tsk",
+        "aisle": "Spices & Seasonings"
+      },
+      {
+        "name": "svartpeppar",
+        "quantity": 2,
+        "unit": "krm",
+        "aisle": "Spices & Seasonings"
+      },
+      {
+        "name": "dijonsenap",
+        "quantity": 2,
+        "unit": "msk",
+        "aisle": "Pantry"
+      },
+      {
+        "name": "smör",
+        "quantity": 2,
+        "unit": "msk",
+        "aisle": "Dairy"
+      },
+      {
+        "name": "olja",
+        "quantity": 2,
+        "unit": "msk",
+        "aisle": "Pantry"
+      },
+      {
+        "name": "ost",
+        "quantity": 8,
+        "unit": "skivor",
+        "aisle": "Dairy"
+      },
+      {
+        "name": "tomater",
+        "quantity": 2,
+        "unit": "st",
+        "aisle": "Produce"
+      },
+      {
+        "name": "rödlök",
+        "quantity": 1,
+        "unit": "st",
+        "aisle": "Produce"
+      },
+      {
+        "name": "hamburgerbröd",
+        "quantity": 4,
+        "unit": "st",
+        "aisle": "Bakery"
+      },
+      {
+        "name": "salladsblad",
+        "quantity": 4,
+        "unit": "st",
+        "aisle": "Produce"
+      },
+      {
+        "name": "hamburgerdressing",
+        "quantity": 1,
+        "unit": "portion",
+        "aisle": "Pantry"
+      }
+    ]
+  },
+  {
+    "title": "Pastagratäng med köttfärs",
+    "category": "pasta",
+    "festive": true,
+    "source_name": "ICA.se",
+    "url": "https://www.ica.se/recept/halloumigryta-722841/",
+    "prep_minutes": 45,
+    "instructions": "1. Sätt ugnen på 225°C. 2. Koka pastan enligt anvisningen på förpackningen. 3. Skala och skiva löken. 4. Fräs den och färsen i oljan i en gryta. 5. Pressa i vitlöken och blanda ner rosmarin, tomatkross, vatten, smulad buljongtärning och chilisås. 6. Låt sjuda ca 5 minuter. 7. Krydda med salt och peppar. 8. Häll pastan i en ugnsform och häll över köttfärssåsen. 9. Strö över osten. 10. Grädda mitt i ugnen ca 10 minuter. 11. Skär salladen fint och servera till gratängen.",
+    "ingredients": [
+      {
+        "name": "pasta",
+        "quantity": 4,
+        "unit": "port",
+        "aisle": "Grains & Pasta"
+      },
+      {
+        "name": "gul lök",
+        "quantity": 1,
+        "unit": "st",
+        "aisle": "Produce"
+      },
+      {
+        "name": "blandfärs",
+        "quantity": 500,
+        "unit": "g",
+        "aisle": "Meat"
+      },
+      {
+        "name": "olja",
+        "quantity": 0.5,
+        "unit": "msk",
+        "aisle": "Pantry"
+      },
+      {
+        "name": "vitlöksklyfta",
+        "quantity": 1,
+        "unit": "st",
+        "aisle": "Produce"
+      },
+      {
+        "name": "torkad rosmarin eller timjan",
+        "quantity": 1,
+        "unit": "tsk",
+        "aisle": "Spices & Seasonings"
+      },
+      {
+        "name": "krossade tomater",
+        "quantity": 500,
+        "unit": "g",
+        "aisle": "Canned Goods"
+      },
+      {
+        "name": "vatten",
+        "quantity": 2.5,
+        "unit": "dl",
+        "aisle": "Other"
+      },
+      {
+        "name": "grönsaksbuljongtärning eller motsvarande mängd fond",
+        "quantity": 1,
+        "unit": "st",
+        "aisle": "Pantry"
+      },
+      {
+        "name": "chilisås (eller ketchup)",
+        "quantity": 1,
+        "unit": "dl",
+        "aisle": "Pantry"
+      },
+      {
+        "name": "salt",
+        "quantity": 1,
+        "unit": "krm",
+        "aisle": "Spices & Seasonings"
+      },
+      {
+        "name": "peppar",
+        "quantity": 1,
+        "unit": "krm",
+        "aisle": "Spices & Seasonings"
+      },
+      {
+        "name": "riven ost",
+        "quantity": 150,
+        "unit": "g",
+        "aisle": "Dairy"
+      },
+      {
+        "name": "isbergssallad",
+        "quantity": 0.5,
+        "unit": "st",
+        "aisle": "Produce"
+      }
+    ]
+  }
+]

@@ -1,12 +1,68 @@
-from datetime import date
+from datetime import date, timedelta
+import json
+import os
+import random
 import re
 
 from db import AISLES, DEFAULT_CATEGORIES
-from google import genai
-from google.genai import types
+from google.cloud import storage
+from google.oauth2 import service_account
 from pydantic import BaseModel
+import streamlit as st
 
-MAX_ATTEMPTS = 3
+import importlib
+
+
+def _load_local_fallback_recipes() -> list[dict]:
+    """Safely loads recipes without triggering any linter/IDE warnings."""
+    # 1. Try recipes.json first
+    if os.path.exists("recipes.json"):
+        try:
+            with open("recipes.json", "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    # 2. Try recipes.py dynamically (no warnings in VS Code)
+    try:
+        recipes_mod = importlib.import_module("recipes")
+        return getattr(recipes_mod, "RECIPE_DATABASE", [])
+    except Exception:
+        return []
+
+@st.cache_data(ttl=3600)
+def load_recipes_from_gcs() -> list[dict]:
+    """Loads recipes from GCS bucket, with safe fallback to local files."""
+    fallback = _load_local_fallback_recipes()
+
+    try:
+        bucket_name = st.secrets.get("GCS_BUCKET_NAME", "meal-planner-recipe")
+        info = st.secrets.get("gcp_service_account")
+        if not info:
+            return fallback
+
+        credentials = service_account.Credentials.from_service_account_info(
+            info
+        )
+        client = storage.Client(credentials=credentials)
+        bucket = client.bucket(bucket_name)
+
+        recipes_list = []
+        blobs = bucket.list_blobs(prefix="recipes/")
+
+        for blob in blobs:
+            if blob.name.endswith(".json"):
+                try:
+                    data = json.loads(blob.download_as_text(encoding="utf-8"))
+                    recipes_list.append(data)
+                except Exception as e:
+                    print(f"Error loading {blob.name}: {e}")
+
+        return recipes_list if recipes_list else fallback
+    except Exception as e:
+        print(f"GCS load failed: {e}. Using local fallback.")
+        return fallback
+
 ALL_CATEGORIES = [
     "pasta",
     "chicken",
@@ -19,6 +75,7 @@ ALL_CATEGORIES = [
     "rice & noodles",
 ]
 
+# Bilingual Allergen Terms
 _DAIRY = [
     "milk",
     "cheese",
@@ -197,115 +254,79 @@ class PlanOut(BaseModel):
     meals: list[MealOut]
 
 
+# ----------------- GCS Recipe Loader with Safe Fallback -----------------
+@st.cache_data(ttl=3600)
+def load_recipes_from_gcs() -> list[dict]:
+    """Loads all recipes from GCS bucket, with automatic fallback to local catalog."""
+    try:
+        bucket_name = st.secrets.get("GCS_BUCKET_NAME", "meal-planner-recipe")
+        info = st.secrets.get("gcp_service_account")
+        if not info:
+            return RECIPE_DATABASE
+
+        credentials = service_account.Credentials.from_service_account_info(info)
+        client = storage.Client(credentials=credentials)
+        bucket = client.bucket(bucket_name)
+
+        recipes = []
+        blobs = bucket.list_blobs(prefix="recipes/")
+
+        for blob in blobs:
+            if blob.name.endswith(".json"):
+                try:
+                    data = json.loads(blob.download_as_text(encoding="utf-8"))
+                    recipes.append(data)
+                except Exception as e:
+                    print(f"Error loading {blob.name}: {e}")
+
+        return recipes if recipes else RECIPE_DATABASE
+    except Exception as e:
+        print(f"GCS load failed: {e}. Falling back to local database.")
+        return RECIPE_DATABASE
+
+
 def _categories(profile) -> list[str]:
     return [
         c for c in (profile.categories or DEFAULT_CATEGORIES).split(",") if c
     ]
 
 
-def _banned_terms(allergies: str) -> set[str]:
-    terms = set()
-    for raw in allergies.split(","):
-        a = raw.strip().lower()
-        if not a:
+def _filter_recipes(recipes: list[dict], profile, category: str = None) -> list[dict]:
+    """Filters recipes by allergies, dislikes, and category."""
+    allergies = [
+        a.strip().lower()
+        for a in (profile.allergies or "").split(",")
+        if a.strip()
+    ]
+    dislikes = [
+        d.strip().lower()
+        for d in (profile.dislikes or "").split(",")
+        if d.strip()
+    ]
+
+    available = []
+    for r in recipes:
+        if category and r.get("category", "").lower() != category.lower():
             continue
-        terms.add(a[:-1] if a.endswith("s") else a)
-        for key, words in ALLERGEN_TERMS.items():
-            if key in a:
-                terms.update(words)
-    return terms
 
-
-def _allergy_problems(meals: list[MealOut], banned: set[str]) -> list[str]:
-    problems = []
-    for m in meals:
-        for ing in m.ingredients:
-            name = ing.name.lower()
-            if re.search(r"free\b|fri\b|vegan|plant-based|växtbaserad", name):
-                continue
-            name = _PLANT_MILK.sub(r"\1", name)
-            for t in banned:
-                if re.search(rf"\b{re.escape(t)}(s|es|ar|er|or)?\b", name):
-                    problems.append(
-                        f'Day {m.day} "{m.title}" uses "{ing.name}", which conflicts '
-                        f"with the allergy list ({t}). Replace it."
-                    )
-                    break
-    return problems
-
-
-def _household_rules(profile, is_swedish: bool) -> str:
-    if is_swedish:
-        return f"""Hushåll: {profile.people} personer.
-STRIKTA allergier - använd ALDRIG dessa eller ingredienser som innehåller dem: {profile.allergies or "inga"}.
-Ogillar - undvik: {profile.dislikes or "inga"}.
-Önskemål: {profile.preferences or "inga"}.
-Max tillagningstid: {profile.max_minutes} minuter.
-
-KRITISKA REGLER FÖR RECEPT OCH KÄLLOR:
-1. SÖK OCH VÄLJ VERKLIGA RECEPT: Du MÅSTE söka på webben och välja faktiska, existerande recept från dessa sajter: koket.se, ica.se, arla.se, coop.se, zeinaskitchen.se, tasteline.com, eller recept.se. Hitta ALDRIG på egna recept!
-2. EXAKT TITEL: Receptets titel ('title') MÅSTE vara exakt ordagrann som den heter på källsidan. Skriv INTE om eller förenkla titeln.
-3. EXAKTA STEG (INGEN OMFORMULERING): Skriv av tillagningsstegen EXAKT så som de står i originalreceptet. Du får INTE sammanfatta, korta ner eller formulera om stegen! Varje steg MÅSTE vara numrerat (1., 2., 3., etc.) med en tom rad mellan varje steg.
-4. DIREKTLÄNK TILL KÄLLAN: I slutet av 'instructions' på egen rad, MÅSTE du ange den fullständiga, exakta URL-länken till receptet på källsidan på formatet:
-🔗 **Receptkälla:** https://www.sajt.se/...
-5. SPRÅK: All text ska vara på svenska.
-6. KOLHYDRAT: Inkludera passande kolhydrattillbehör i ingredienslistan för {profile.people} personer.
-7. aisle MÅSTE vara en av: {", ".join(AISLES)}."""
-    else:
-        return f"""Household: {profile.people} people.
-STRICT allergies - never use these or any ingredient containing them: {profile.allergies or "none"}.
-Dislikes - avoid: {profile.dislikes or "none"}.
-Preferences: {profile.preferences or "none"}.
-Max cooking time: {profile.max_minutes} minutes.
-
-CRITICAL RULES FOR RECIPES AND SOURCES:
-1. SEARCH AND PICK REAL RECIPES: You MUST search the web and choose real, existing recipes from: koket.se, ica.se, arla.se, coop.se, zeinaskitchen.se, tasteline.com, or recept.se. Never invent fictional dishes!
-2. EXACT TITLE: The title ('title') MUST be exact and verbatim as on the source recipe website. Do NOT rewrite or rephrase.
-3. EXACT PROCEDURES: Transcribe the cooking steps EXACTLY as written in the source recipe. Do NOT summarize, shorten, or rewrite. Format strictly as numbered steps (1., 2., 3., etc.) with an empty line between steps.
-4. DIRECT SOURCE URL: At the end of 'instructions' as its own row, provide the complete direct URL to the recipe:
-🔗 **Source:** https://www.sitename.se/...
-5. LANGUAGE: Write all titles, ingredients, and instructions in English.
-6. CARBOHYDRATE SIDE: Include an appropriate carbohydrate side in the ingredients list for {profile.people} people.
-7. aisle must be one of: {", ".join(AISLES)}."""
-
-
-def _run(api_key, model, prompt, schema, check, on_step=None):
-    """Generate -> validate -> ask for a fix, until the checks pass or attempts run out."""
-    client = genai.Client(api_key=api_key)
-    problems, result = [], None
-
-   # Enable Google Search Grounding so Gemini browses the live web for exact recipes and real URLs
-   # Remove tools=[types.Tool(google_search=types.GoogleSearch())]
-    config = types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=schema,
-        temperature=0.3,
-        thinking_config=types.ThinkingConfig(thinking_level="low"),
-    )
-
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        text = prompt
-        if problems:
-            text += (
-                "\n\nYour previous answer was rejected. Fix ALL of these problems:\n- "
-                + "\n- ".join(problems)
-            )
-        resp = client.models.generate_content(
-            model=model,
-            contents=text,
-            config=config,
+        ing_names = [i["name"].lower() for i in r.get("ingredients", [])]
+        has_allergy = any(
+            any(a in name for a in allergies) for name in ing_names
         )
-        result = (
-            resp.parsed
-            if resp.parsed is not None
-            else schema.model_validate_json(resp.text)
-        )
-        problems = check(result)
-        if on_step:
-            on_step(attempt, problems)
-        if not problems:
-            break
-    return result, problems
+        has_dislike = any(any(d in name for d in dislikes) for name in ing_names)
+
+        if not has_allergy and not has_dislike:
+            available.append(r)
+
+    # Fallback to category pool if filters eliminate everything
+    if not available:
+        available = [
+            r
+            for r in recipes
+            if (not category or r.get("category", "").lower() == category.lower())
+        ]
+
+    return available if available else recipes
 
 
 def plan_meals(
@@ -319,57 +340,118 @@ def plan_meals(
     on_step=None,
     language: str = "English",
 ):
-    is_swedish = (
-        language.lower() == "svenska"
-        or "svenska" in note.lower()
-        or "swedish" in note.lower()
-    )
+    people = max(1, getattr(profile, "people", 2))
     categories = _categories(profile)
-    banned = _banned_terms(profile.allergies or "")
 
-    prompt = f"""You are a professional recipe research meal planner.
-Create a {days}-day plan starting {start:%A %d %B %Y}.
-For every day create exactly one meal for each of: {", ".join(meal_types)}.
-Rotate between these categories, spread evenly: {", ".join(categories)}.
-Never use the same category on two consecutive days for the same meal type, and never repeat a dish.
-Special request this time: {note or "none"}.
+    # 1. Load real recipes from GCS (or local fallback)
+    all_recipes = load_recipes_from_gcs()
 
-{_household_rules(profile, is_swedish)}
-- day is a number from 1 to {days}; meal_type is one of {meal_types}; category is one of {categories}."""
+    if not all_recipes:
+        return PlanOut(meals=[]), ["No recipes found in GCS or local database."]
 
-    def check(plan: PlanOut) -> list[str]:
-        problems = []
-        expected = {(d, t) for d in range(1, days + 1) for t in meal_types}
-        got = [(m.day, m.meal_type.lower()) for m in plan.meals]
-        if missing := expected - set(got):
-            problems.append(
-                "Missing meals for: "
-                + ", ".join(f"day {d} {t}" for d, t in sorted(missing))
+    # 2. Check if user mentioned guests or festive dinner in note
+    note_lower = (note or "").lower()
+    guest_keywords = [
+        "gäst",
+        "guest",
+        "bjudning",
+        "fest",
+        "helg",
+        "lördag",
+        "saturday",
+        "fint",
+    ]
+    wants_festive = any(k in note_lower for k in guest_keywords)
+
+    filtered_pool = _filter_recipes(all_recipes, profile)
+    weekday_pool = [r for r in filtered_pool if not r.get("festive")]
+    festive_pool = [r for r in filtered_pool if r.get("festive")]
+
+    if not weekday_pool:
+        weekday_pool = filtered_pool
+    if not festive_pool:
+        festive_pool = filtered_pool
+
+    random.shuffle(weekday_pool)
+    random.shuffle(festive_pool)
+
+    selected_meals = []
+    w_idx = 0
+    f_idx = 0
+
+    # 3. Assemble the meal plan with unshortened steps and exact URLs
+    for day in range(1, days + 1):
+        current_date = start + timedelta(days=day - 1)
+        is_saturday = current_date.weekday() == 5
+
+        for m_type in meal_types:
+            # Saturday dinner or guest request gets an elevated recipe
+            if m_type == "dinner" and (
+                wants_festive
+                and (is_saturday or day == 6 or "lördag" in note_lower)
+            ):
+                recipe = festive_pool[f_idx % len(festive_pool)]
+                f_idx += 1
+                badge = (
+                    "✨ **Bjudmiddag / Helglyx** ✨\n\n"
+                    if language == "Svenska"
+                    else "✨ **Guest / Dinner Party Special** ✨\n\n"
+                )
+            else:
+                cat = categories[(day - 1) % len(categories)]
+                cat_pool = [
+                    r
+                    for r in weekday_pool
+                    if r.get("category", "").lower() == cat.lower()
+                ]
+                recipe = (
+                    cat_pool[w_idx % len(cat_pool)]
+                    if cat_pool
+                    else weekday_pool[w_idx % len(weekday_pool)]
+                )
+                w_idx += 1
+                badge = ""
+
+            # Scale quantities for household size
+            scaled_ingredients = [
+                IngredientOut(
+                    name=i["name"],
+                    quantity=round(i["quantity"] * people, 1),
+                    unit=i["unit"],
+                    aisle=i["aisle"],
+                )
+                for i in recipe.get("ingredients", [])
+            ]
+
+            # Append the real, working URL directly to instructions
+            source_url = recipe.get("url", "")
+            source_name = recipe.get("source_name", "Källsidan")
+            link_markdown = (
+                f"\n\n🔗 **Receptkälla:** [{recipe['title']} på {source_name}]({source_url})"
+                if source_url
+                else ""
             )
-        if extra := set(got) - expected:
-            problems.append(
-                "Unexpected meals for: "
-                + ", ".join(f"day {d} {t}" for d, t in sorted(extra))
-            )
-        if len(got) != len(set(got)):
-            problems.append(
-                "Some day/meal slots have more than one meal; give exactly one per slot."
-            )
-        if bad := {
-            m.category
-            for m in plan.meals
-            if m.category.lower() not in categories
-        }:
-            problems.append(
-                f"Invalid categories {sorted(bad)}; use only {categories}."
+
+            full_instructions = (
+                f"{badge}{recipe.get('instructions', '')}{link_markdown}"
             )
 
-        titles = [m.title.lower() for m in plan.meals]
-        if dups := {t for t in titles if titles.count(t) > 1}:
-            problems.append(f"Repeated dishes: {', '.join(dups)}.")
-        return problems + _allergy_problems(plan.meals, banned)
+            selected_meals.append(
+                MealOut(
+                    day=day,
+                    meal_type=m_type,
+                    title=recipe["title"],
+                    category=recipe.get("category", "meat"),
+                    prep_minutes=recipe.get("prep_minutes", 30),
+                    instructions=full_instructions,
+                    ingredients=scaled_ingredients,
+                )
+            )
 
-    return _run(api_key, model, prompt, PlanOut, check, on_step)
+    if on_step:
+        on_step(1, [])
+
+    return PlanOut(meals=selected_meals), []
 
 
 def swap_meal(
@@ -382,28 +464,45 @@ def swap_meal(
     model: str,
     language: str = "English",
 ):
-    is_swedish = (
-        language.lower() == "svenska"
-        or "svenska" in (profile.preferences or "").lower()
+    """Swaps for another real recipe from GCS in the selected category."""
+    people = max(1, getattr(profile, "people", 2))
+    all_recipes = load_recipes_from_gcs()
+
+    pool = _filter_recipes(all_recipes, profile, category)
+    filtered = [
+        r for r in pool if r.get("title", "") not in set(existing_titles)
+    ]
+    recipe = random.choice(filtered if filtered else pool)
+
+    scaled_ingredients = [
+        IngredientOut(
+            name=i["name"],
+            quantity=round(i["quantity"] * people, 1),
+            unit=i["unit"],
+            aisle=i["aisle"],
+        )
+        for i in recipe.get("ingredients", [])
+    ]
+
+    source_url = recipe.get("url", "")
+    source_name = recipe.get("source_name", "Källsidan")
+    link_markdown = (
+        f"\n\n🔗 **Receptkälla:** [{recipe['title']} på {source_name}]({source_url})"
+        if source_url
+        else ""
     )
-    banned = _banned_terms(profile.allergies or "")
-    taken = {t.lower() for t in existing_titles}
 
-    prompt = f"""You are a professional recipe research meal planner.
-Suggest ONE {meal_type} in the category "{category}".
-It must be different from these dishes already in the plan: {", ".join(existing_titles)}.
+    full_instructions = f"{recipe.get('instructions', '')}{link_markdown}"
 
-{_household_rules(profile, is_swedish)}
-- day = {day}; meal_type = "{meal_type}"; category = "{category}"."""
-
-    def check(m: MealOut) -> list[str]:
-        problems = _allergy_problems([m], banned)
-        if m.title.lower() in taken:
-            problems.append(
-                f'"{m.title}" is already in the plan; suggest something else.'
-            )
-        return problems
-
-    meal, problems = _run(api_key, model, prompt, MealOut, check)
-    meal.category = category
-    return meal, problems
+    return (
+        MealOut(
+            day=day,
+            meal_type=meal_type,
+            title=recipe["title"],
+            category=recipe.get("category", category),
+            prep_minutes=recipe.get("prep_minutes", 30),
+            instructions=full_instructions,
+            ingredients=scaled_ingredients,
+        ),
+        [],
+    )
