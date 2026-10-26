@@ -2,9 +2,9 @@ name: Nightly Recipe Harvest
 
 on:
   schedule:
-    # Runs every night at 02:00 UTC (around 03:00/04:00 Swedish time)
-    - cron: '0 2 * * *'
-  workflow_dispatch: # Allows you to click a button on GitHub to run it manually anytime!
+    # Runs every night at 02:00 UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub anytime
 
 jobs:
   harvest:
