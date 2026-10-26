@@ -39,164 +39,6 @@ BANNED_MAINS = [
     "guacamole",
 ]
 
-# Bilingual Allergen Terms
-_DAIRY = [
-    "milk",
-    "cheese",
-    "butter",
-    "cream",
-    "yogurt",
-    "yoghurt",
-    "parmesan",
-    "mozzarella",
-    "feta",
-    "ricotta",
-    "mascarpone",
-    "ghee",
-    "creme fraiche",
-    "mjölk",
-    "ost",
-    "smör",
-    "grädde",
-    "vispgrädde",
-    "matlagningsgrädde",
-    "fil",
-    "kvarg",
-    "keso",
-]
-_FISH = [
-    "fish",
-    "salmon",
-    "tuna",
-    "cod",
-    "haddock",
-    "trout",
-    "sardine",
-    "anchovy",
-    "mackerel",
-    "tilapia",
-    "sea bass",
-    "hake",
-    "pollock",
-    "fisk",
-    "lax",
-    "tonfisk",
-    "torsk",
-    "kolja",
-    "öring",
-    "sill",
-    "strömming",
-    "makrill",
-    "sej",
-    "abborre",
-    "gös",
-]
-_SHELLFISH = [
-    "shrimp",
-    "prawn",
-    "crab",
-    "lobster",
-    "mussel",
-    "clam",
-    "oyster",
-    "scallop",
-    "squid",
-    "calamari",
-    "räka",
-    "räkor",
-    "kräfta",
-    "kräftor",
-    "krabba",
-    "hummer",
-    "mussla",
-    "musslor",
-    "ostron",
-    "bläckfisk",
-    "scampi",
-]
-
-ALLERGEN_TERMS = {
-    "nut": [
-        "nut",
-        "almond",
-        "walnut",
-        "cashew",
-        "pecan",
-        "hazelnut",
-        "pistachio",
-        "macadamia",
-        "peanut",
-        "praline",
-        "marzipan",
-        "pesto",
-        "nutella",
-        "nöt",
-        "nötter",
-        "mandel",
-        "mandlar",
-        "valnöt",
-        "valnötter",
-        "pekannöt",
-        "hasselnöt",
-        "pistage",
-        "jordnöt",
-        "marsipan",
-    ],
-    "peanut": ["peanut", "satay", "jordnöt", "jordnötter", "jordnötssmör"],
-    "gluten": [
-        "wheat",
-        "flour",
-        "pasta",
-        "spaghetti",
-        "penne",
-        "fusilli",
-        "tagliatelle",
-        "lasagne",
-        "lasagna",
-        "orzo",
-        "gnocchi",
-        "noodle",
-        "bread",
-        "breadcrumb",
-        "panko",
-        "couscous",
-        "barley",
-        "rye",
-        "bulgur",
-        "semolina",
-        "tortilla",
-        "pita",
-        "soy sauce",
-        "vete",
-        "vetemjöl",
-        "mjöl",
-        "spagetti",
-        "bröd",
-        "ströbröd",
-        "korn",
-        "råg",
-        "mannagryn",
-        "sojasås",
-    ],
-    "dairy": _DAIRY,
-    "lactose": _DAIRY,
-    "milk": _DAIRY,
-    "egg": ["egg", "mayonnaise", "mayo", "aioli", "ägg", "majonnäs", "majo"],
-    "fish": _FISH,
-    "shellfish": _SHELLFISH,
-    "crustacean": _SHELLFISH,
-    "seafood": _FISH + _SHELLFISH,
-    "soy": ["soy", "tofu", "edamame", "tempeh", "miso", "soja", "sojasås"],
-    "sesame": ["sesame", "tahini", "sesam", "sesamfrö"],
-    "celery": ["celery", "celeriac", "selleri", "stjälkselleri", "rotselleri"],
-    "mustard": ["mustard", "senap"],
-}
-
-_PLANT_MILK = re.compile(
-    r"\b(coconut|oat|soy|almond|rice|plant|kokos|havre|soja|mandel|ris|växtbaserad)\s+(milk|cream|yogurt|yoghurt|mjölk|grädde|dryck)"
-)
-
-
 class IngredientOut(BaseModel):
     name: str
     quantity: float
@@ -337,8 +179,8 @@ def _matches_category(recipe: dict, category: str) -> bool:
 def _filter_recipes(
     recipes: list[dict], profile, category: str = None
 ) -> list[dict]:
-    """Filters recipes by allergies and dislikes."""
-    allergies = [
+    """Dynamically filters recipes using Gemini's pre-tagged GCS allergens."""
+    user_allergies = [
         a.strip().lower()
         for a in (profile.allergies or "").split(",")
         if a.strip()
@@ -358,16 +200,18 @@ def _filter_recipes(
         if category and not _matches_category(r, category):
             continue
 
-        # Safely checks 'original_name', falling back to old 'name' if necessary
+        # Dynamic check against Gemini's allergen tags in the GCS JSON
+        recipe_allergens = [a.lower() for a in r.get("allergens", [])]
+        has_allergy = any(
+            any(ua in ra for ra in recipe_allergens) for ua in user_allergies
+        )
+
+        # Check dislikes against ingredient names
         ing_names = [
             (i.get("original_name") or i.get("name", "")).lower()
             for i in r.get("ingredients", [])
         ]
-        
-        has_allergy = any(
-            any(a in name for a in allergies) for name in ing_names
-        )
-        has_dislike = any(any(d in name for d in dislikes) for name in ing_names)
+        has_dislike = any(any(d in name for name in ing_names) for d in dislikes)
 
         if not has_allergy and not has_dislike:
             available.append(r)
@@ -381,7 +225,6 @@ def _filter_recipes(
         ]
 
     return available if available else recipes
-
 
 def plan_meals(
     profile,
