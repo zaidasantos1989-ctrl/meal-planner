@@ -337,7 +337,7 @@ def _matches_category(recipe: dict, category: str) -> bool:
 def _filter_recipes(
     recipes: list[dict], profile, category: str = None
 ) -> list[dict]:
-    """Filters recipes by allergies and dislikes, discarding accessories."""
+    """Filters recipes by allergies and dislikes."""
     allergies = [
         a.strip().lower()
         for a in (profile.allergies or "").split(",")
@@ -352,14 +352,18 @@ def _filter_recipes(
     available = []
     for r in recipes:
         title = r.get("title", "").lower()
-        # Drop side dishes
         if any(banned in title for banned in BANNED_MAINS):
             continue
 
         if category and not _matches_category(r, category):
             continue
 
-        ing_names = [i["name"].lower() for i in r.get("ingredients", [])]
+        # Safely checks 'original_name', falling back to old 'name' if necessary
+        ing_names = [
+            (i.get("original_name") or i.get("name", "")).lower()
+            for i in r.get("ingredients", [])
+        ]
+        
         has_allergy = any(
             any(a in name for a in allergies) for name in ing_names
         )
