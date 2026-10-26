@@ -135,17 +135,9 @@ def _ingredients(items) -> list[Ingredient]:
         name = (i.name or "").strip()
         if any(ex in name.lower() for ex in EXCLUDED_INGREDIENTS):
             continue
-        
-        # Pull the aisle assigned dynamically by Gemini during harvesting
-        raw_aisle = getattr(i, "aisle", "Övrigt")
-        aisle = classify_aisle(raw_aisle)
-
-        res.append(Ingredient(
-            name=name, 
-            quantity=i.quantity or 0, 
-            unit=(i.unit or "").strip(),
-            aisle=aisle
-        ))
+        aisle = i.aisle if i.aisle in AISLES else "Övrigt"
+        res.append(Ingredient(name=name, quantity=i.quantity or 0, unit=(i.unit or "").strip(),
+                              aisle=aisle))
     return res
 
 

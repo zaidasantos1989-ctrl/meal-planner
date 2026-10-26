@@ -127,6 +127,19 @@ SIDE_DISH_WORDS = [
     "guacamole",
 ]
 
+AISLES = [
+    "Badrums artiklar",
+    "Bröd",
+    "Ost och annat",
+    "Kött",
+    "Frukt och grönt",
+    "Fryst",
+    "Mejeri",
+    "Skafferi",
+    "Chips och godis",
+    "Övrigt",
+]
+
 
 # ==============================================================================
 # 🎯 STRICT RECIPE URL PATTERNS (Whitelisting real recipe URLs only)
@@ -228,25 +241,11 @@ def is_likely_recipe(html_text: str) -> bool:
     )
     return has_ing and has_steps
 
-AISLES = [
-    "Produce",
-    "Meat & Seafood",
-    "Meat",
-    "Poultry",
-    "Dairy",
-    "Bakery",
-    "Pantry",
-    "Spices & Seasonings",
-    "Frozen",
-    "Canned Goods",
-    "Grains & Pasta",
-    "Other",
-]
-
 
 class Ingredient(BaseModel):
-    name: str
-    quantity: float  # Normalized for 1 person
+    original_name: str = Field(description="The exact raw ingredient name as written in the recipe text")
+    normalized_name: str = Field(description="Clean, standard, singular base name for grocery shopping (e.g., 'Gul lök', 'Vispgrädde')")
+    quantity: float
     unit: str
     aisle: str
 
@@ -267,6 +266,7 @@ class HarvestedRecipe(BaseModel):
     instructions: str = Field(
         description="Full, verbatim numbered steps (1., 2., 3.)"
     )
+    allergens: list[str] = Field(description="List of major allergens present in this dish. Choose from: gluten, dairy, nuts, peanuts, egg, fish, shellfish, soy, sesame, celery, mustard")
     ingredients: list[Ingredient]
 
 
@@ -313,20 +313,17 @@ def parse_and_classify_recipe(client, url: str) -> dict | None:
     {page_text}
 
     CRITICAL RULES:
-    1. MAIN MEAL ONLY: This MUST be a full dinner (huvudrätt). If this is only a side dish, condiment, or sauce (e.g. potatismos, stuvade makaroner, bearnaisesås, dressing), return title as 'INVALID_NOT_A_RECIPE'.
-    2. STANDARDIZED INGREDIENT NAMES (CRITICAL): 
-       - Use clean, standard, singular Swedish names for ingredients. 
-       - If a recipe says 'gula lökar' or 'gul lök eller schalottenlökar', name it strictly 'Gul lök'.
-       - If it says 'vispgrädde' or 'matlagningsgrädde', name it 'Vispgrädde' or 'Matlagningsgrädde'.
-       - Never include preparation words in the ingredient name (e.g. use 'Kycklingfilé', not 'Tärnad kycklingfilé' or 'Stekt kyckling').
-    3. CATEGORY PRECEDENCE:
-       - If it is a soup (soppa, buljong) -> category MUST be 'soup' (NOT vegetarian).
-       - If it is a pasta dish (pasta, spaghetti, lasagne, penne) -> category MUST be 'pasta' (NOT vegetarian).
-       - 'vegetarian' is ONLY for non-pasta, non-soup main dishes.
-    4. occasion: Classify as 'everyday', 'weekend', or 'guest'.
-    5. instructions: Full verbatim numbered steps (1., 2., 3.). Do not shorten.
-    6. ingredients: Breakdown normalized for 1 person.
-    7. aisle: Must be one of: {", ".join(AISLES)}.
+    1. title: Exact verbatim recipe title.
+    2. protein: One of: chicken, beef, pork, fish, seafood, vegetarian, vegan.
+    3. occasion: 'everyday', 'weekend', or 'guest'.
+    4. category: One of: pasta, chicken, meat, fish, vegetarian, vegan, soup, salad, rice & noodles.
+    5. instructions: Verbatim numbered steps (1., 2., 3.). Do not shorten.
+    6. ingredients: Break down all ingredients. 
+       - For 'original_name', copy the ingredient name exactly as it appears in the text.
+       - For 'normalized_name', provide the clean shopping version (remove preparation words like finhackad/tärnad, use singular form).
+       - OMIT salt, pepper, cooking oil, water, and rice entirely.
+    7. aisle: Must be ONE of these exact categories: {", ".join(AISLES)}. Choose the most appropriate one for a Swedish supermarket.
+    8. allergens: Accurately list any major allergens present (e.g., 'gluten' if it has wheat/pasta/bread, 'dairy' if it has milk/butter/cheese/cream, 'fish', etc.).
     """
 
     res = client.models.generate_content(

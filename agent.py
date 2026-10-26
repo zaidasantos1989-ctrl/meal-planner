@@ -62,30 +62,35 @@ class PlanOut(BaseModel):
 
 
 def _parse_ingredient_safe(i, people):
-    """Handles dicts, strings, and missing keys safely without ever crashing."""
+    """Dynamically reads the AI-assigned aisle with a safe fallback to Övrigt."""
     if isinstance(i, str):
         return IngredientOut(name=i, quantity=round(1.0 * people, 1), unit="st", aisle="Övrigt")
     
-    # Check all possible name keys safely
     name = (
-        (isinstance(i, dict) and (i.get("original_name") or i.get("name") or i.get("normalized_name")))
+        (isinstance(i, dict) and (i.get("normalized_name") or i.get("original_name") or i.get("name")))
+        or getattr(i, "normalized_name", None) 
         or getattr(i, "original_name", None) 
         or getattr(i, "name", None) 
         or "Ingrediens"
     )
     
-    # Safely extract quantity, unit, and aisle with defaults
+    # Strip any stray quantities from name
+    name = re.sub(r"^\d+([,\.]\d+)?\s*(st|dl|msk|tsk|g|kg|ml|l|kruka|förp|pkt|stk)?\s*", "", str(name), flags=re.IGNORECASE).strip()
+    name = name.capitalize()
+
     qty = float((isinstance(i, dict) and i.get("quantity")) or getattr(i, "quantity", 1.0) or 1.0) * people
     unit = ((isinstance(i, dict) and i.get("unit")) or getattr(i, "unit", "st")) or "st"
-    aisle = ((isinstance(i, dict) and i.get("aisle")) or getattr(i, "aisle", "Övrigt")) or "Övrigt"
     
+    # Read aisle directly from GCS JSON. If valid, use it. Otherwise default to "Övrigt".
+    raw_aisle = ((isinstance(i, dict) and i.get("aisle")) or getattr(i, "aisle", "Övrigt")) or "Övrigt"
+    aisle = raw_aisle if raw_aisle in AISLES else "Övrigt"
+
     return IngredientOut(
-        name=str(name),
+        name=name,
         quantity=round(qty, 1),
         unit=str(unit),
         aisle=str(aisle)
     )
-
 
 # ----------------- Fallback & GCS Loader -----------------
 def _load_local_fallback_recipes() -> list[dict]:
