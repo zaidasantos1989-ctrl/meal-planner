@@ -306,7 +306,7 @@ def parse_and_classify_recipe(client, url: str) -> dict | None:
 
     page_text = clean_html(resp.text)
 
-   prompt = f"""
+    prompt = f"""
     You are an expert recipe parser.
     URL: {url}
     Content:

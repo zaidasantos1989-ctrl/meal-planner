@@ -27,20 +27,17 @@ session = requests.Session()
 session.trust_env = False
 
 AISLES = [
-    "Produce",
-    "Meat & Seafood",
-    "Meat",
-    "Poultry",
-    "Dairy",
-    "Bakery",
-    "Pantry",
-    "Spices & Seasonings",
-    "Frozen",
-    "Canned Goods",
-    "Grains & Pasta",
-    "Other",
+    "Badrums artiklar",
+    "Bröd",
+    "Ost och annat",
+    "Kött",
+    "Frukt och grönt",
+    "Fryst",
+    "Mejeri",
+    "Skafferi",
+    "Chips och godis",
+    "Övrigt",
 ]
-
 
 class Ingredient(BaseModel):
     original_name: str = Field(description="Exact ingredient name as written in source recipe")
@@ -132,10 +129,12 @@ def main():
         try:
             old_data = json.loads(blob.download_as_text(encoding="utf-8"))
 
-            # 🚀 SMART SKIP: Check if this file already has the new schema
+            # 🚀 SMART SKIP: Only skip if ingredients ALREADY have valid Swedish aisles
             ingredients = old_data.get("ingredients", [])
-            if ingredients and "original_name" in ingredients[0]:
-                print(f"⏩ Already updated, skipping: {blob.name}")
+            has_swedish_aisles = ingredients and all(i.get("aisle") in AISLES for i in ingredients)
+
+            if has_swedish_aisles:
+                print(f"⏩ Already has Swedish aisles, skipping: {blob.name}")
                 continue
 
             url = old_data.get("url")
@@ -143,12 +142,12 @@ def main():
                 print(f"  ⚠️ Skipping {blob.name} (No URL found inside JSON)")
                 continue
 
-            print(f"🔄 Fixing: {old_data.get('title', url)}")
+            print(f"🔄 Updating aisles for: {old_data.get('title', url)}")
             new_data = parse_recipe(client, url)
             if not new_data:
                 continue
 
-            # Determine correct path based on new protein classification
+            # Determine correct path based on protein classification
             slug = re.sub(r'[^a-zA-Z0-9åäöÅÄÖ]+', '-', new_data['title'].lower()).strip('-')
             protein = new_data.get('protein', 'other').lower()
             new_path = f"recipes/{protein}/{slug}.json"
@@ -165,12 +164,13 @@ def main():
                 blob.delete()
 
             updated += 1
-            print(f"  ✅ Fixed & Saved: {new_path}")
+            print(f"  ✅ Fixed & Saved with Swedish aisles: {new_path}")
             
             time.sleep(5.0)  # Safe delay under 15 RPM free tier limit
         except Exception as e:
             print(f"  ❌ Failed to fix {blob.name}: {e}")
 
+    print(f"\n🎉 Successfully updated {updated} recipes with Swedish aisles!")
 
 if __name__ == "__main__":
     main()
