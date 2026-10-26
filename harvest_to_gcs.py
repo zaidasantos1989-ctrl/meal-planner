@@ -306,7 +306,7 @@ def parse_and_classify_recipe(client, url: str) -> dict | None:
 
     page_text = clean_html(resp.text)
 
-    prompt = f"""
+   prompt = f"""
     You are an expert recipe parser.
     URL: {url}
     Content:
@@ -314,14 +314,19 @@ def parse_and_classify_recipe(client, url: str) -> dict | None:
 
     CRITICAL RULES:
     1. MAIN MEAL ONLY: This MUST be a full dinner (huvudrätt). If this is only a side dish, condiment, or sauce (e.g. potatismos, stuvade makaroner, bearnaisesås, dressing), return title as 'INVALID_NOT_A_RECIPE'.
-    2. CATEGORY PRECEDENCE:
+    2. STANDARDIZED INGREDIENT NAMES (CRITICAL): 
+       - Use clean, standard, singular Swedish names for ingredients. 
+       - If a recipe says 'gula lökar' or 'gul lök eller schalottenlökar', name it strictly 'Gul lök'.
+       - If it says 'vispgrädde' or 'matlagningsgrädde', name it 'Vispgrädde' or 'Matlagningsgrädde'.
+       - Never include preparation words in the ingredient name (e.g. use 'Kycklingfilé', not 'Tärnad kycklingfilé' or 'Stekt kyckling').
+    3. CATEGORY PRECEDENCE:
        - If it is a soup (soppa, buljong) -> category MUST be 'soup' (NOT vegetarian).
        - If it is a pasta dish (pasta, spaghetti, lasagne, penne) -> category MUST be 'pasta' (NOT vegetarian).
-       - 'vegetarian' is ONLY for non-pasta, non-soup main dishes (e.g. halloumigryta, biffar, falafel, paj).
-    3. occasion: Classify as 'everyday' (snabb vardagsmat), 'weekend' (mysmat/gryta), or 'guest' (festmåltid).
-    4. instructions: Full verbatim numbered steps (1., 2., 3.). Do not shorten.
-    5. ingredients: Breakdown normalized for 1 person.
-    6. aisle: Must be one of: {", ".join(AISLES)}.
+       - 'vegetarian' is ONLY for non-pasta, non-soup main dishes.
+    4. occasion: Classify as 'everyday', 'weekend', or 'guest'.
+    5. instructions: Full verbatim numbered steps (1., 2., 3.). Do not shorten.
+    6. ingredients: Breakdown normalized for 1 person.
+    7. aisle: Must be one of: {", ".join(AISLES)}.
     """
 
     res = client.models.generate_content(

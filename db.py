@@ -123,40 +123,29 @@ def latest_plan(s) -> MealPlan | None:
     return s.scalars(select(MealPlan).order_by(MealPlan.id.desc()).limit(1)).first()
 
 
-def classify_aisle(name: str) -> str:
-    """Strictly maps ingredients into your requested categories."""
-    n = name.lower()
-    if any(w in n for w in ["tandkräm", "schampo", "duschtvål", "tvål", "handtvål", "toalettpapper", "hushållspapper", "wc-rent", "rengöring", "toalettrengöring"]):
-        return "Badrums artiklar"
-    if any(w in n for w in ["pinsa", "hamburgerbröd", "korvbröd", "bröd", "tortilla", "pita", "naan", "tunnbröd"]):
-        return "Bröd"
-    if any(w in n for w in ["ost", "parmesan", "feta", "mozzarella", "halloumi", "kaviar", "grillkorv", "falukorv", "leverpastej", "skinka", "salami"]):
-        return "Ost och annat"
-    if any(w in n for w in ["färs", "nötfärs", "fläskfärs", "blandfärs", "biff", "oxfilé", "fläskfilé", "högrev", "entrecote", "fläskkarré", "kött", "fläskkött", "nötkött", "bacon"]):
-        return "Kött"
-    if any(w in n for w in ["frukt", "grönt", "lök", "vitlök", "tomat", "paprika", "banan", "potatis", "morot", "spenat", "sallad", "citron", "dill", "persilja", "gurka", "zucchini", "broccoli", "avokado", "äpple", "champinjoner", "svamp"]):
-        return "Frukt och grönt"
-    if any(w in n for w in ["kyckling", "fisk", "lax", "torsk", "röding", "sej", "räkor", "glass", "frysta bär", "ärtor"]):
-        return "Fryst"
-    if any(w in n for w in ["mjölk", "grädde", "vispgrädde", "matlagningsgrädde", "crème fraiche", "creme fraiche", "gräddfil", "smör", "keso", "kvarg", "fil", "yoghurt"]):
-        return "Mejeri"
-    if any(w in n for w in ["chips", "godis", "choklad", "lösgodis", "snacks"]):
-        return "Chips och godis"
-    if any(w in n for w in ["pasta", "spagetti", "spaghetti", "lasagne", "penne", "ris", "bulgur", "couscous", "krossade tomater", "tomatpuré", "sås", "soja", "vinäger", "olja", "krydda", "buljong", "fond", "mjöl", "socker"]):
-        return "Skafferi"
+def classify_aisle(aisle_name: str) -> str:
+    """Trusts the aisle assigned dynamically by Gemini, with a safe fallback to Övrigt."""
+    if aisle_name in AISLES:
+        return aisle_name
     return "Övrigt"
-
 
 def _ingredients(items) -> list[Ingredient]:
     res = []
     for i in items:
         name = (i.name or "").strip()
-        # Exclude salt, pepper, oil from grocery list
         if any(ex in name.lower() for ex in EXCLUDED_INGREDIENTS):
             continue
-        aisle = classify_aisle(name)
-        res.append(Ingredient(name=name, quantity=i.quantity or 0, unit=(i.unit or "").strip(),
-                              aisle=aisle))
+        
+        # Pull the aisle assigned dynamically by Gemini during harvesting
+        raw_aisle = getattr(i, "aisle", "Övrigt")
+        aisle = classify_aisle(raw_aisle)
+
+        res.append(Ingredient(
+            name=name, 
+            quantity=i.quantity or 0, 
+            unit=(i.unit or "").strip(),
+            aisle=aisle
+        ))
     return res
 
 
@@ -192,7 +181,7 @@ def fmt_amount(quantity: float, unit: str) -> str:
 
 
 def rebuild_grocery_list(s, plan: MealPlan) -> None:
-    """Replace plan-based items with merged ingredients; keep custom items and ticks."""
+    """Uses the clean normalized name to sum up and group items for the grocery store."""
     old = s.scalars(select(GroceryItem).where(GroceryItem.source == "plan")).all()
     was_checked = {i.name.lower() for i in old if i.checked}
     s.execute(delete(GroceryItem).where(GroceryItem.source == "plan"))
@@ -200,20 +189,25 @@ def rebuild_grocery_list(s, plan: MealPlan) -> None:
     totals: dict[tuple[str, str, str], dict] = {}
     for meal in plan.meals:
         for ing in meal.ingredients:
-            name = (ing.name or "").strip()
-            if any(ex in name.lower() for ex in EXCLUDED_INGREDIENTS):
-                continue
+            # We can find the normalized version if stored, or fallback to name formatting
+            raw_name = (ing.name or "").strip()
+            
+            # If you saved normalized_name in GCS, you can pull it. 
+            # Otherwise, a clean base capitalization handles standard formatting:
+            clean_name = raw_name.split("finhackad")[-1].split("tärnad")[-1].strip().capitalize()
+
             unit, qty = (ing.unit or "").lower(), ing.quantity or 0
             if unit in TO_BASE:
                 unit, factor = TO_BASE[unit]
                 qty *= factor
-            norm_name = name.lower()
+
             aisle = ing.aisle
-            entry = totals.setdefault((norm_name, unit, aisle), {"qty": 0.0, "display_name": name})
+            key = (clean_name.lower(), unit, aisle)
+            entry = totals.setdefault(key, {"qty": 0.0, "display_name": clean_name})
             entry["qty"] += qty
 
     for (norm_name, unit, aisle), e in totals.items():
-        s.add(GroceryItem(name=e["display_name"].capitalize(), amount=fmt_amount(e["qty"], unit),
+        s.add(GroceryItem(name=e["display_name"], amount=fmt_amount(e["qty"], unit),
                           aisle=aisle, source="plan", checked=norm_name in was_checked))
     s.commit()
 
