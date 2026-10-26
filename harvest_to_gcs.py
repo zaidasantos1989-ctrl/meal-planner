@@ -128,18 +128,62 @@ SIDE_DISH_WORDS = [
 ]
 
 
+# ==============================================================================
+# 🎯 STRICT RECIPE URL PATTERNS (Whitelisting real recipe URLs only)
+# ==============================================================================
+def is_valid_recipe_url(url: str, base_domain: str) -> bool:
+    """Strictly validates if a URL matches the exact pattern of a real recipe."""
+    url_lower = url.lower()
+    path = urlparse(url).path.strip("/")
+    segments = [s for s in path.split("/") if s]
+
+    # --- ICA.se: Real recipes ALWAYS end in a number (e.g. /recept/korvstroganoff-712808/) ---
+    if "ica.se" in base_domain:
+        return bool(re.search(r"/recept/[a-z0-9-]+-\d+/?$", url_lower))
+
+    # --- Recepten.se: Real recipes are under /recept/ and end in .html ---
+    if "recepten.se" in base_domain:
+        return url_lower.startswith("https://www.recepten.se/recept/") and url_lower.endswith(".html")
+
+    # --- Arla.se: Real recipes are strictly /recept/<recipe-slug>/ ---
+    if "arla.se" in base_domain:
+        if not url_lower.startswith("https://www.arla.se/recept/"):
+            return False
+        # Must be /recept/<slug> (exactly 2 segments), avoiding /samling/, /teman/, /artiklar/
+        if len(segments) != 2:
+            return False
+        banned = ["samling", "teman", "artiklar", "tips", "halsa", "inspiration", "veckomeny", "nytt"]
+        return not any(b in segments[1] for b in banned)
+
+    # --- Köket.se: Real recipes are single-level root slugs (e.g. koket.se/klassisk-biff-rydberg) ---
+    if "koket.se" in base_domain:
+        if len(segments) != 1:
+            return False
+        banned = ["mat", "dryck", "artiklar", "kockar", "program", "vin", "kokbocker", "kurser", "om-oss", "tips"]
+        return not any(segments[0].startswith(b) for b in banned)
+
+    # --- Zeina's Kitchen: Single-level recipe post slug ---
+    if "zeinaskitchen.se" in base_domain:
+        if len(segments) != 1:
+            return False
+        banned = ["category", "tag", "page", "om-zeina", "kontakt", "feed", "comments", "annonsera"]
+        return not any(segments[0].startswith(b) for b in banned)
+
+    # --- Coop.se & Tasteline.com ---
+    if "coop.se" in base_domain or "tasteline.com" in base_domain:
+        return "/recept/" in url_lower and len(segments) == 2
+
+    return False
+
+
 def auto_discover_links(hub_url: str, existing_urls: set) -> list[str]:
-    """Scans hub page and extracts ONLY actual recipe article links."""
+    """Scans hub page and extracts ONLY 100% verified recipe links."""
     if not hub_url or not hub_url.strip():
         return []
 
     print(f"🔎 Scanning hub: {hub_url}...")
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36",
         "Accept-Language": "sv-SE,sv;q=0.9",
     }
     try:
@@ -149,36 +193,40 @@ def auto_discover_links(hub_url: str, existing_urls: set) -> list[str]:
         print(f"  ❌ Could not open hub: {e}")
         return []
 
-    found_links = re.findall(
-        r"<a\s+[^>]*?href=[\'\"]([^\'\"]+)[\'\"]",
-        resp.text,
-        flags=re.IGNORECASE,
-    )
-
+    # Find all <a href="..."> links
+    found_links = re.findall(r"<a\s+[^>]*?href=[\'\"]([^\'\"]+)[\'\"]", resp.text, flags=re.IGNORECASE)
     base_domain = urlparse(hub_url).netloc
     recipe_links = []
 
     for link in found_links:
         clean_url = urljoin(hub_url, link).split("?")[0].rstrip("/")
 
-        if base_domain not in clean_url:
-            continue
+        # Apply strict site-specific whitelist
+        if is_valid_recipe_url(clean_url, base_domain):
+            if clean_url not in existing_urls and clean_url not in recipe_links:
+                recipe_links.append(clean_url)
 
-        if any(bad in clean_url.lower() for bad in BLOCKED_PATTERNS):
-            continue
-
-        path = urlparse(clean_url).path.strip("/")
-        if not path or len(path) < 3:
-            continue
-
-        if clean_url not in existing_urls and clean_url not in recipe_links:
-            recipe_links.append(clean_url)
-
-    print(f"  ✨ Found {len(recipe_links)} real recipe links.")
+    print(f"  ✨ Found {len(recipe_links)} verified recipe links.")
     return recipe_links
 
 
-MAX_RECIPES_PER_RUN = 60
+def is_likely_recipe(html_text: str) -> bool:
+    """Pre-check: Detects Schema.org Recipe data or Swedish cooking keywords."""
+    lower = html_text.lower()
+    
+    # 1. Official Google Recipe Schema (100% guaranteed recipe)
+    if '"@type": "recipe"' in lower or '"@type":"recipe"' in lower:
+        return True
+
+    # 2. Swedish recipe section keywords
+    has_ing = "ingrediens" in lower or "ingredienser" in lower
+    has_steps = (
+        "gör så här" in lower
+        or "tillagning" in lower
+        or "instruktion" in lower
+        or "steg för steg" in lower
+    )
+    return has_ing and has_steps
 
 AISLES = [
     "Produce",
@@ -241,20 +289,6 @@ def clean_html(html: str) -> str:
     )
     text = re.sub(r"<[^>]+>", " ", text)
     return re.sub(r"\s+", " ", text).strip()[:14000]
-
-
-def is_likely_recipe(html_text: str) -> bool:
-    """Pre-check: rejects blog posts, portion guides, and about pages before calling Gemini."""
-    lower = html_text.lower()
-    has_ingredients = "ingrediens" in lower
-    has_steps = (
-        "gör så här" in lower
-        or "tillagning" in lower
-        or "instruktion" in lower
-        or "steg för steg" in lower
-        or "så här gör du" in lower
-    )
-    return has_ingredients and has_steps
 
 
 def parse_and_classify_recipe(client, url: str) -> dict | None:
@@ -350,13 +384,15 @@ def save_to_gcs(bucket, recipe: dict):
     )
 
 
+TARGET_NEW_RECIPES = 60  # Number of REAL recipes to successfully save per run
+
 def main():
     api_key = st.secrets.get("GEMINI_API_KEY")
     client = genai.Client(api_key=api_key)
     bucket = get_gcs_bucket()
     print(f"📦 Connected to GCS Bucket: {bucket.name}")
 
-    # Check which URLs already exist in the bucket
+    # Read existing URLs to prevent duplicates
     existing_urls = set()
     for blob in bucket.list_blobs(prefix="recipes/"):
         if blob.name.endswith(".json"):
@@ -369,7 +405,7 @@ def main():
 
     print(f"📚 Currently {len(existing_urls)} recipes already stored in GCS.")
 
-    # 1. Round-robin balanced discovery across websites
+    # Discover verified recipe links
     by_domain = defaultdict(list)
     for hub in DISCOVERY_HUBS:
         links = auto_discover_links(hub, existing_urls)
@@ -381,36 +417,40 @@ def main():
     for domain in by_domain:
         random.shuffle(by_domain[domain])
 
-    to_process = []
+    # Round-robin interleaved queue
+    candidates_queue = []
     domains = list(by_domain.keys())
     random.shuffle(domains)
 
-    while len(to_process) < MAX_RECIPES_PER_RUN and any(by_domain.values()):
+    while any(by_domain.values()):
         for d in domains:
-            if by_domain[d] and len(to_process) < MAX_RECIPES_PER_RUN:
-                to_process.append(by_domain[d].pop(0))
+            if by_domain[d]:
+                candidates_queue.append(by_domain[d].pop(0))
 
-    print(
-        f"\n🚀 Harvesting {len(to_process)} balanced recipes across all websites into GCS...\n"
-    )
+    print(f"\n🚀 Total verified candidate recipe links available: {len(candidates_queue)}")
+    print(f"🎯 Target to save this run: {TARGET_NEW_RECIPES} real recipes.\n")
 
     added = 0
-    for url in to_process:
+    for url in candidates_queue:
+        if added >= TARGET_NEW_RECIPES:
+            break
+
         try:
-            print(f"📥 Parsing: {url}")
+            print(f"📥 [{added + 1}/{TARGET_NEW_RECIPES}] Parsing: {url}")
             recipe_data = parse_and_classify_recipe(client, url)
             if recipe_data is None:
                 continue
 
             save_to_gcs(bucket, recipe_data)
+            existing_urls.add(url)
             added += 1
-            print(f"  ✅ Added: {recipe_data['title']}")
+            print(f"  ✅ Saved: {recipe_data['title']} ({recipe_data['category'].upper()})")
 
-            time.sleep(4.2)
+            time.sleep(4.2)  # Respects Gemini's 15/min free limit
         except Exception as e:
             print(f"  ❌ Failed {url}: {e}")
 
-    print(f"\n🎉 Completed run! Added {added} new categorized recipes to GCS.")
+    print(f"\n🎉 Completed run! Successfully added {added} genuine dinner recipes to GCS.")
 
 
 if __name__ == "__main__":

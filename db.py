@@ -4,7 +4,35 @@ from sqlalchemy import ForeignKey, Text, create_engine, delete, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 DEFAULT_CATEGORIES = "pasta,chicken,meat,fish,vegetarian"
-AISLES = ["Produce", "Meat & Fish", "Dairy & Eggs", "Bakery", "Pantry", "Frozen", "Spices", "Other"]
+
+# ==============================================================================
+# 🛒 EXACT AISLES IN YOUR REQUESTED ORDER
+# ==============================================================================
+AISLES = [
+    "Badrums artiklar",
+    "Bröd",
+    "Ost och annat",
+    "Kött",
+    "Frukt och grönt",
+    "Fryst",
+    "Mejeri",
+    "Skafferi",
+    "Chips och godis",
+    "Övrigt",
+]
+
+EXCLUDED_INGREDIENTS = [
+    "salt",
+    "peppar",
+    "svartpeppar",
+    "vitpeppar",
+    "nymalen svartpeppar",
+    "olja",
+    "olivolja",
+    "rapsolja",
+    "vatten",
+]
+
 TO_BASE = {"kg": ("g", 1000), "l": ("ml", 1000)}
 
 SessionLocal = sessionmaker(expire_on_commit=False)
@@ -95,16 +123,41 @@ def latest_plan(s) -> MealPlan | None:
     return s.scalars(select(MealPlan).order_by(MealPlan.id.desc()).limit(1)).first()
 
 
-def normalize_aisle(aisle: str) -> str:
-    for a in AISLES:
-        if a.lower() == (aisle or "").strip().lower():
-            return a
-    return "Other"
+def classify_aisle(name: str) -> str:
+    """Strictly maps ingredients into your requested categories."""
+    n = name.lower()
+    if any(w in n for w in ["tandkräm", "schampo", "duschtvål", "tvål", "handtvål", "toalettpapper", "hushållspapper", "wc-rent", "rengöring", "toalettrengöring"]):
+        return "Badrums artiklar"
+    if any(w in n for w in ["pinsa", "hamburgerbröd", "korvbröd", "bröd", "tortilla", "pita", "naan", "tunnbröd"]):
+        return "Bröd"
+    if any(w in n for w in ["ost", "parmesan", "feta", "mozzarella", "halloumi", "kaviar", "grillkorv", "falukorv", "leverpastej", "skinka", "salami"]):
+        return "Ost och annat"
+    if any(w in n for w in ["färs", "nötfärs", "fläskfärs", "blandfärs", "biff", "oxfilé", "fläskfilé", "högrev", "entrecote", "fläskkarré", "kött", "fläskkött", "nötkött", "bacon"]):
+        return "Kött"
+    if any(w in n for w in ["frukt", "grönt", "lök", "vitlök", "tomat", "paprika", "banan", "potatis", "morot", "spenat", "sallad", "citron", "dill", "persilja", "gurka", "zucchini", "broccoli", "avokado", "äpple", "champinjoner", "svamp"]):
+        return "Frukt och grönt"
+    if any(w in n for w in ["kyckling", "fisk", "lax", "torsk", "röding", "sej", "räkor", "glass", "frysta bär", "ärtor"]):
+        return "Fryst"
+    if any(w in n for w in ["mjölk", "grädde", "vispgrädde", "matlagningsgrädde", "crème fraiche", "creme fraiche", "gräddfil", "smör", "keso", "kvarg", "fil", "yoghurt"]):
+        return "Mejeri"
+    if any(w in n for w in ["chips", "godis", "choklad", "lösgodis", "snacks"]):
+        return "Chips och godis"
+    if any(w in n for w in ["pasta", "spagetti", "spaghetti", "lasagne", "penne", "ris", "bulgur", "couscous", "krossade tomater", "tomatpuré", "sås", "soja", "vinäger", "olja", "krydda", "buljong", "fond", "mjöl", "socker"]):
+        return "Skafferi"
+    return "Övrigt"
 
 
 def _ingredients(items) -> list[Ingredient]:
-    return [Ingredient(name=i.name.strip(), quantity=i.quantity or 0, unit=(i.unit or "").strip(),
-                       aisle=normalize_aisle(i.aisle)) for i in items]
+    res = []
+    for i in items:
+        name = (i.name or "").strip()
+        # Exclude salt, pepper, oil from grocery list
+        if any(ex in name.lower() for ex in EXCLUDED_INGREDIENTS):
+            continue
+        aisle = classify_aisle(name)
+        res.append(Ingredient(name=name, quantity=i.quantity or 0, unit=(i.unit or "").strip(),
+                              aisle=aisle))
+    return res
 
 
 def save_plan(s, start: date, days: int, plan_out) -> MealPlan:
@@ -144,22 +197,28 @@ def rebuild_grocery_list(s, plan: MealPlan) -> None:
     was_checked = {i.name.lower() for i in old if i.checked}
     s.execute(delete(GroceryItem).where(GroceryItem.source == "plan"))
 
-    totals: dict[tuple[str, str], dict] = {}
+    totals: dict[tuple[str, str, str], dict] = {}
     for meal in plan.meals:
         for ing in meal.ingredients:
+            name = (ing.name or "").strip()
+            if any(ex in name.lower() for ex in EXCLUDED_INGREDIENTS):
+                continue
             unit, qty = (ing.unit or "").lower(), ing.quantity or 0
             if unit in TO_BASE:
                 unit, factor = TO_BASE[unit]
                 qty *= factor
-            name = ing.name.lower()
-            entry = totals.setdefault((name, unit), {"qty": 0.0, "aisle": ing.aisle})
+            norm_name = name.lower()
+            aisle = ing.aisle
+            entry = totals.setdefault((norm_name, unit, aisle), {"qty": 0.0, "display_name": name})
             entry["qty"] += qty
 
-    for (name, unit), e in totals.items():
-        s.add(GroceryItem(name=name.capitalize(), amount=fmt_amount(e["qty"], unit),
-                          aisle=e["aisle"], source="plan", checked=name in was_checked))
+    for (norm_name, unit, aisle), e in totals.items():
+        s.add(GroceryItem(name=e["display_name"].capitalize(), amount=fmt_amount(e["qty"], unit),
+                          aisle=aisle, source="plan", checked=norm_name in was_checked))
     s.commit()
 
 
 def grocery_items(s) -> list[GroceryItem]:
-    return s.scalars(select(GroceryItem).order_by(GroceryItem.name)).all()
+    items = s.scalars(select(GroceryItem)).all()
+    aisle_order = {aisle: idx for idx, aisle in enumerate(AISLES)}
+    return sorted(items, key=lambda x: (aisle_order.get(x.aisle, 99), x.name))
