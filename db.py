@@ -3,7 +3,7 @@ from datetime import date, datetime
 from sqlalchemy import ForeignKey, Text, create_engine, delete, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
-DEFAULT_CATEGORIES = "pasta,chicken,meat,fish,vegetarian"
+DEFAULT_CATEGORIES = "pasta,chicken,meat,fish"
 
 # ==============================================================================
 # 🛒 EXACT AISLES IN YOUR REQUESTED ORDER
