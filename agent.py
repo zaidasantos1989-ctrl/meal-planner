@@ -39,6 +39,7 @@ BANNED_MAINS = [
     "guacamole",
 ]
 
+
 class IngredientOut(BaseModel):
     name: str
     quantity: float
@@ -58,6 +59,32 @@ class MealOut(BaseModel):
 
 class PlanOut(BaseModel):
     meals: list[MealOut]
+
+
+def _parse_ingredient_safe(i, people):
+    """Handles dicts, strings, and missing keys safely without ever crashing."""
+    if isinstance(i, str):
+        return IngredientOut(name=i, quantity=round(1.0 * people, 1), unit="st", aisle="Övrigt")
+    
+    # Check all possible name keys safely
+    name = (
+        (isinstance(i, dict) and (i.get("original_name") or i.get("name") or i.get("normalized_name")))
+        or getattr(i, "original_name", None) 
+        or getattr(i, "name", None) 
+        or "Ingrediens"
+    )
+    
+    # Safely extract quantity, unit, and aisle with defaults
+    qty = float((isinstance(i, dict) and i.get("quantity")) or getattr(i, "quantity", 1.0) or 1.0) * people
+    unit = ((isinstance(i, dict) and i.get("unit")) or getattr(i, "unit", "st")) or "st"
+    aisle = ((isinstance(i, dict) and i.get("aisle")) or getattr(i, "aisle", "Övrigt")) or "Övrigt"
+    
+    return IngredientOut(
+        name=str(name),
+        quantity=round(qty, 1),
+        unit=str(unit),
+        aisle=str(aisle)
+    )
 
 
 # ----------------- Fallback & GCS Loader -----------------
@@ -82,7 +109,9 @@ def load_recipes_from_gcs() -> list[dict]:
     """Loads all categorized JSON recipes from GCS bucket with safe local fallback."""
     fallback = _load_local_fallback_recipes()
     try:
-        bucket_name = st.secrets.get("GCS_BUCKET_NAME", "meal-planner-recipe")
+        bucket_name = st.secrets.get(
+            "GCS_BUCKET_NAME", "meal-planner-recipes-zaida"
+        )
         info = st.secrets.get("gcp_service_account")
         if not info:
             return fallback
@@ -226,6 +255,7 @@ def _filter_recipes(
 
     return available if available else recipes
 
+
 def plan_meals(
     profile,
     start: date,
@@ -334,14 +364,9 @@ def plan_meals(
             recipe = random.choice(cat_candidates)
             used_titles.add(recipe["title"])
 
-            # Scale quantities for household size
+            # Scale quantities for household size safely
             scaled_ingredients = [
-                IngredientOut(
-                    name=i["name"],
-                    quantity=round(i["quantity"] * people, 1),
-                    unit=i["unit"],
-                    aisle=i["aisle"],
-                )
+                _parse_ingredient_safe(i, people)
                 for i in recipe.get("ingredients", [])
             ]
 
@@ -386,7 +411,7 @@ def swap_meal(
     model: str,
     language: str = "English",
 ):
-    """Swaps for another real recipe from GCS in the selected category."""
+    """Swaps for another real recipe from GCS in the selected category safely."""
     people = max(1, getattr(profile, "people", 2))
     all_recipes = load_recipes_from_gcs()
 
@@ -396,13 +421,9 @@ def swap_meal(
     ]
     recipe = random.choice(filtered if filtered else pool)
 
+    # Scale quantities for household size safely
     scaled_ingredients = [
-        IngredientOut(
-            name=i["name"],
-            quantity=round(i["quantity"] * people, 1),
-            unit=i["unit"],
-            aisle=i["aisle"],
-        )
+        _parse_ingredient_safe(i, people)
         for i in recipe.get("ingredients", [])
     ]
 
