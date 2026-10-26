@@ -29,7 +29,7 @@ jobs:
           echo "GEMINI_API_KEY = '${{ secrets.GEMINI_API_KEY }}'" > .streamlit/secrets.toml
           echo "GCS_BUCKET_NAME = '${{ secrets.GCS_BUCKET_NAME }}'" >> .streamlit/secrets.toml
           echo "[gcp_service_account]" >> .streamlit/secrets.toml
-          echo '${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}' >> .streamlit/secrets.toml
+          echo '${{ secrets.GCP_SERVICE_ACCOUNT_TOML }}' >> .streamlit/secrets.toml
 
       - name: Run Harvester Script
         run: python harvest_to_gcs.py
