@@ -271,12 +271,19 @@ class HarvestedRecipe(BaseModel):
 
 
 def get_gcs_bucket():
-    bucket_name = st.secrets.get(
-        "GCS_BUCKET_NAME", "meal-planner-recipe"
+    bucket_name = (
+        os.environ.get("GCS_BUCKET_NAME") 
+        or st.secrets.get("GCS_BUCKET_NAME", "meal-planner-recipe")
     )
-    info = st.secrets["gcp_service_account"]
-    credentials = service_account.Credentials.from_service_account_info(info)
-    client = storage.Client(credentials=credentials)
+    
+    # If GOOGLE_APPLICATION_CREDENTIALS is set by GitHub Actions, client picks it up automatically!
+    if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        client = storage.Client()
+    else:
+        info = st.secrets["gcp_service_account"]
+        credentials = service_account.Credentials.from_service_account_info(info)
+        client = storage.Client(credentials=credentials)
+        
     return client.bucket(bucket_name)
 
 
@@ -386,11 +393,16 @@ def save_to_gcs(bucket, recipe: dict):
     )
 
 
-TARGET_NEW_RECIPES = 60  # Number of REAL recipes to successfully save per run
+TARGET_NEW_RECIPES = 1  # Number of REAL recipes to successfully save per run
 
 def main():
-    api_key = st.secrets.get("GEMINI_API_KEY")
+    # Check environment variable first, then fallback to Streamlit secrets
+    api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+    if not api_key:
+        print("❌ Could not find GEMINI_API_KEY")
+        return
     client = genai.Client(api_key=api_key)
+    
     bucket = get_gcs_bucket()
     print(f"📦 Connected to GCS Bucket: {bucket.name}")
 

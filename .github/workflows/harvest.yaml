@@ -2,9 +2,8 @@ name: Nightly Recipe Harvest
 
 on:
   schedule:
-    # Runs every night at 02:00 UTC
-    - cron: '0 3 * * *'
-  workflow_dispatch: # Allows manual trigger from GitHub anytime
+    - cron: '0 2 * * *'
+  workflow_dispatch:
 
 jobs:
   harvest:
@@ -23,13 +22,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install google-cloud-storage google-genai pydantic requests streamlit urllib3
 
-      - name: Create Streamlit Secrets for Script
+      - name: Create Google Cloud Key File
         run: |
-          mkdir -p .streamlit
-          echo "GEMINI_API_KEY = '${{ secrets.GEMINI_API_KEY }}'" > .streamlit/secrets.toml
-          echo "GCS_BUCKET_NAME = '${{ secrets.GCS_BUCKET_NAME }}'" >> .streamlit/secrets.toml
-          echo "[gcp_service_account]" >> .streamlit/secrets.toml
-          echo '${{ secrets.GCP_SERVICE_ACCOUNT_TOML }}' >> .streamlit/secrets.toml
+          echo '${{ secrets.GCP_SERVICE_ACCOUNT_TOML }}' > gcp-key.json
 
       - name: Run Harvester Script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GCS_BUCKET_NAME: ${{ secrets.GCS_BUCKET_NAME }}
+          GOOGLE_APPLICATION_CREDENTIALS: gcp-key.json
         run: python harvest_to_gcs.py
