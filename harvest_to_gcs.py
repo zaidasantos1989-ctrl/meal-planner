@@ -271,21 +271,24 @@ class HarvestedRecipe(BaseModel):
 
 
 def get_gcs_bucket():
-    # Fetch from environment or Streamlit secrets, then clean all accidental spaces/quotes/newlines
-    raw_bucket = (
-        os.environ.get("GCS_BUCKET_NAME") 
-        or st.secrets.get("GCS_BUCKET_NAME", "meal-planner-recipe")
-    )
+    raw_bucket = os.environ.get("GCS_BUCKET_NAME") or "meal-planner-recipe"
     bucket_name = str(raw_bucket).strip().strip('"').strip("'")
 
-    info = st.secrets.get("gcp_service_account")
-    if info:
-        credentials = service_account.Credentials.from_service_account_info(info)
-        client = storage.Client(credentials=credentials)
-    else:
-        # Fallback to standard environment credentials file if running in CI/CD
+    # If GOOGLE_APPLICATION_CREDENTIALS is set (GitHub Actions), use it directly
+    if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
         client = storage.Client()
-        
+    else:
+        # Local fallback attempt for Streamlit environments
+        try:
+            info = st.secrets.get("gcp_service_account")
+            if info:
+                credentials = service_account.Credentials.from_service_account_info(info)
+                client = storage.Client(credentials=credentials)
+            else:
+                client = storage.Client()
+        except Exception:
+            client = storage.Client()
+            
     return client.bucket(bucket_name)
 
 
@@ -398,16 +401,22 @@ def save_to_gcs(bucket, recipe: dict):
 TARGET_NEW_RECIPES = 1  # Number of REAL recipes to successfully save per run
 
 def main():
-    # Check environment variable first, then fallback to Streamlit secrets
-    api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+    # Read API key safely from environment variables or fallback to secrets
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        try:
+            api_key = st.secrets.get("GEMINI_API_KEY")
+        except Exception:
+            pass
+
     if not api_key:
         print("❌ Could not find GEMINI_API_KEY")
         return
+        
     client = genai.Client(api_key=api_key)
-    
     bucket = get_gcs_bucket()
     print(f"📦 Connected to GCS Bucket: {bucket.name}")
-
+    
     # Read existing URLs to prevent duplicates
     existing_urls = set()
     for blob in bucket.list_blobs(prefix="recipes/"):
