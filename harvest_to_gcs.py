@@ -271,18 +271,20 @@ class HarvestedRecipe(BaseModel):
 
 
 def get_gcs_bucket():
-    bucket_name = (
+    # Fetch from environment or Streamlit secrets, then clean all accidental spaces/quotes/newlines
+    raw_bucket = (
         os.environ.get("GCS_BUCKET_NAME") 
         or st.secrets.get("GCS_BUCKET_NAME", "meal-planner-recipe")
     )
-    
-    # If GOOGLE_APPLICATION_CREDENTIALS is set by GitHub Actions, client picks it up automatically!
-    if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
-        client = storage.Client()
-    else:
-        info = st.secrets["gcp_service_account"]
+    bucket_name = str(raw_bucket).strip().strip('"').strip("'")
+
+    info = st.secrets.get("gcp_service_account")
+    if info:
         credentials = service_account.Credentials.from_service_account_info(info)
         client = storage.Client(credentials=credentials)
+    else:
+        # Fallback to standard environment credentials file if running in CI/CD
+        client = storage.Client()
         
     return client.bucket(bucket_name)
 
