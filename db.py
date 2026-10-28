@@ -1,13 +1,10 @@
 from datetime import date, datetime
-
 from sqlalchemy import ForeignKey, Text, create_engine, delete, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 DEFAULT_CATEGORIES = "pasta,chicken,meat,fish"
 
-# ==============================================================================
-# 🛒 EXACT AISLES IN YOUR REQUESTED ORDER
-# ==============================================================================
+# Only the structural list of allowed categories in order
 AISLES = [
     "Badrums artiklar",
     "Bröd",
@@ -19,18 +16,6 @@ AISLES = [
     "Skafferi",
     "Chips och godis",
     "Övrigt",
-]
-
-EXCLUDED_INGREDIENTS = [
-    "salt",
-    "peppar",
-    "svartpeppar",
-    "vitpeppar",
-    "nymalen svartpeppar",
-    "olja",
-    "olivolja",
-    "rapsolja",
-    "vatten",
 ]
 
 TO_BASE = {"kg": ("g", 1000), "l": ("ml", 1000)}
@@ -84,7 +69,8 @@ class Ingredient(Base):
     __tablename__ = "ingredient"
     id: Mapped[int] = mapped_column(primary_key=True)
     meal_id: Mapped[int] = mapped_column(ForeignKey("meal.id", ondelete="CASCADE"))
-    name: Mapped[str]
+    name: Mapped[str]          # Original name for recipe cooking card
+    shopping_name: Mapped[str] # AI-normalized clean name for grocery list
     quantity: Mapped[float]
     unit: Mapped[str]
     aisle: Mapped[str]
@@ -123,21 +109,25 @@ def latest_plan(s) -> MealPlan | None:
     return s.scalars(select(MealPlan).order_by(MealPlan.id.desc()).limit(1)).first()
 
 
-def classify_aisle(aisle_name: str) -> str:
-    """Trusts the aisle assigned dynamically by Gemini, with a safe fallback to Övrigt."""
-    if aisle_name in AISLES:
-        return aisle_name
-    return "Övrigt"
-
 def _ingredients(items) -> list[Ingredient]:
+    """Dynamically reads original and AI-normalized names directly from harvested data."""
     res = []
     for i in items:
-        name = (i.name or "").strip()
-        if any(ex in name.lower() for ex in EXCLUDED_INGREDIENTS):
-            continue
-        aisle = i.aisle if i.aisle in AISLES else "Övrigt"
-        res.append(Ingredient(name=name, quantity=i.quantity or 0, unit=(i.unit or "").strip(),
-                              aisle=aisle))
+        # 1. Original text for the cooking card
+        raw_name = getattr(i, "original_name", None) or getattr(i, "name", "")
+        # 2. Clean AI-normalized name for the grocery shopping list
+        clean_name = getattr(i, "normalized_name", None) or raw_name
+        
+        raw_aisle = getattr(i, "aisle", "Övrigt")
+        aisle = raw_aisle if raw_aisle in AISLES else "Övrigt"
+
+        res.append(Ingredient(
+            name=raw_name.strip(),
+            shopping_name=clean_name.strip().capitalize(),
+            quantity=i.quantity or 0,
+            unit=(i.unit or "").strip(),
+            aisle=aisle
+        ))
     return res
 
 
@@ -173,34 +163,54 @@ def fmt_amount(quantity: float, unit: str) -> str:
 
 
 def rebuild_grocery_list(s, plan: MealPlan) -> None:
-    """Uses the clean normalized name to sum up and group items for the grocery store."""
+    """Aggregates and sums up items using the AI-generated shopping names."""
     old = s.scalars(select(GroceryItem).where(GroceryItem.source == "plan")).all()
     was_checked = {i.name.lower() for i in old if i.checked}
     s.execute(delete(GroceryItem).where(GroceryItem.source == "plan"))
 
-    totals: dict[tuple[str, str, str], dict] = {}
+    totals: dict[tuple[str, str], dict] = {}
     for meal in plan.meals:
         for ing in meal.ingredients:
-            # We can find the normalized version if stored, or fallback to name formatting
-            raw_name = (ing.name or "").strip()
-            
-            # If you saved normalized_name in GCS, you can pull it. 
-            # Otherwise, a clean base capitalization handles standard formatting:
-            clean_name = raw_name.split("finhackad")[-1].split("tärnad")[-1].strip().capitalize()
-
+            # Uses the AI-normalized shopping name directly
+            clean_name = (ing.shopping_name or ing.name or "").strip().capitalize()
             unit, qty = (ing.unit or "").lower(), ing.quantity or 0
+
             if unit in TO_BASE:
                 unit, factor = TO_BASE[unit]
                 qty *= factor
 
             aisle = ing.aisle
-            key = (clean_name.lower(), unit, aisle)
-            entry = totals.setdefault(key, {"qty": 0.0, "display_name": clean_name})
-            entry["qty"] += qty
+            key = (clean_name.lower(), aisle)
 
-    for (norm_name, unit, aisle), e in totals.items():
-        s.add(GroceryItem(name=e["display_name"], amount=fmt_amount(e["qty"], unit),
-                          aisle=aisle, source="plan", checked=norm_name in was_checked))
+            # Sum quantities for identical items
+            found = False
+            for entry in totals.setdefault(key, []):
+                if entry["unit"] == unit or not entry["unit"] or not unit:
+                    if not entry["unit"] and unit:
+                        entry["unit"] = unit
+                    entry["qty"] += qty
+                    found = True
+                    break
+            if not found:
+                totals.setdefault(key, []).append({
+                    "display_name": clean_name,
+                    "unit": unit,
+                    "qty": qty
+                })
+
+    for (norm_name, aisle), entries in totals.items():
+        for e in entries:
+            qty = e["qty"]
+            unit = e["unit"]
+            amount = fmt_amount(qty, unit) if (qty > 0 or unit) else ""
+
+            s.add(GroceryItem(
+                name=e["display_name"], 
+                amount=amount,
+                aisle=aisle, 
+                source="plan", 
+                checked=norm_name in was_checked
+            ))
     s.commit()
 
 

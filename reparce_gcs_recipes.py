@@ -129,7 +129,6 @@ def main():
         try:
             old_data = json.loads(blob.download_as_text(encoding="utf-8"))
 
-            # 🚀 SMART SKIP: Only skip if ingredients ALREADY have valid Swedish aisles
             ingredients = old_data.get("ingredients", [])
             has_swedish_aisles = ingredients and all(i.get("aisle") in AISLES for i in ingredients)
 
@@ -143,7 +142,18 @@ def main():
                 continue
 
             print(f"🔄 Updating aisles for: {old_data.get('title', url)}")
-            new_data = parse_recipe(client, url)
+            
+            # 🛡️ Gracefully catch 403 Forbidden or 404 Not Found errors from anti-bot firewalls
+            try:
+                new_data = parse_recipe(client, url)
+            except requests.exceptions.HTTPError as he:
+                status_code = he.response.status_code if he.response else "Unknown"
+                print(f"  ⚠️ Website blocked access ({status_code}) for {url}. Keeping existing data and skipping.")
+                continue
+            except Exception as pe:
+                print(f"  ❌ Parse error for {url}: {pe}")
+                continue
+
             if not new_data:
                 continue
 
@@ -152,23 +162,21 @@ def main():
             protein = new_data.get('protein', 'other').lower()
             new_path = f"recipes/{protein}/{slug}.json"
 
-            # Upload updated data
             new_blob = bucket.blob(new_path)
             new_blob.upload_from_string(
                 json.dumps(new_data, ensure_ascii=False, indent=2),
                 content_type="application/json"
             )
 
-            # Delete old file if the protein category changed folder paths
             if blob.name != new_path:
                 blob.delete()
 
             updated += 1
             print(f"  ✅ Fixed & Saved with Swedish aisles: {new_path}")
             
-            time.sleep(5.0)  # Safe delay under 15 RPM free tier limit
+            time.sleep(5.0)
         except Exception as e:
-            print(f"  ❌ Failed to fix {blob.name}: {e}")
+            print(f"  ❌ Failed to process {blob.name}: {e}")
 
     print(f"\n🎉 Successfully updated {updated} recipes with Swedish aisles!")
 
