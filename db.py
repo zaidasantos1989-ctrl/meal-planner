@@ -218,3 +218,20 @@ def grocery_items(s) -> list[GroceryItem]:
     items = s.scalars(select(GroceryItem)).all()
     aisle_order = {aisle: idx for idx, aisle in enumerate(AISLES)}
     return sorted(items, key=lambda x: (aisle_order.get(x.aisle, 99), x.name))
+
+def update_grocery_item(s, item_id: int, name: str, amount: str, aisle: str) -> None:
+    """Updates an item's name, amount, or moves it to a new aisle."""
+    item = s.get(GroceryItem, item_id)
+    if item:
+        item.name = name.strip()
+        item.amount = amount.strip()
+        item.aisle = aisle
+        s.commit()
+
+
+def delete_grocery_item(s, item_id: int) -> None:
+    """Deletes an item from the grocery list."""
+    item = s.get(GroceryItem, item_id)
+    if item:
+        s.delete(item)
+        s.commit()

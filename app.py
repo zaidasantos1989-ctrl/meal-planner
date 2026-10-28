@@ -219,34 +219,28 @@ def fmt_category(cat: str, language: str) -> str:
 
 AISLE_NAMES = {
     "English": {
-        "Produce": "🥦 Produce",
-        "Meat & Seafood": "🥩 Meat & Seafood",
-        "Meat": "🥩 Meat",
-        "Poultry": "🍗 Poultry",
-        "Dairy": "🧀 Dairy",
-        "Dairy & Eggs": "🧀 Dairy & Eggs",
-        "Bakery": "🍞 Bakery",
-        "Pantry": "🥫 Pantry",
-        "Spices & Seasonings": "🧂 Spices & Seasonings",
-        "Frozen": "🧊 Frozen",
-        "Canned Goods": "🥫 Canned Goods",
-        "Grains & Pasta": "🍝 Grains & Pasta",
-        "Other": "🛒 Other",
+        "Badrums artiklar": "🧴 Bathroom & Hygiene",
+        "Bröd": "🍞 Bread & Bakery",
+        "Ost och annat": "🧀 Cheese & Cold Cuts",
+        "Kött": "🥩 Meat",
+        "Frukt och grönt": "🥦 Fruits & Vegetables",
+        "Fryst": "🧊 Frozen",
+        "Mejeri": "🥛 Dairy",
+        "Skafferi": "🥫 Pantry",
+        "Chips och godis": "🍫 Snacks & Candy",
+        "Övrigt": "🛒 Other",
     },
     "Svenska": {
-        "Produce": "🥦 Frukt & Grönt",
-        "Meat & Seafood": "🥩 Kött & Fisk",
-        "Meat": "🥩 Kött & Chark",
-        "Poultry": "🍗 Fågel / Kyckling",
-        "Dairy": "🧀 Mejeri",
-        "Dairy & Eggs": "🧀 Mejeri & Ägg",
-        "Bakery": "🍞 Bröd & Bageri",
-        "Pantry": "🥫 Skafferi",
-        "Spices & Seasonings": "🧂 Kryddor & Smaksättning",
-        "Frozen": "🧊 Fryst",
-        "Canned Goods": "🥫 Konserver",
-        "Grains & Pasta": "🍝 Ris, Pasta & Gryn",
-        "Other": "🛒 Övrigt",
+        "Badrums artiklar": "🧴 Badrumsartiklar",
+        "Bröd": "🍞 Bröd",
+        "Ost och annat": "🧀 Ost och annat",
+        "Kött": "🥩 Kött",
+        "Frukt och grönt": "🥦 Frukt och grönt",
+        "Fryst": "🧊 Fryst",
+        "Mejeri": "🥛 Mejeri",
+        "Skafferi": "🥫 Skafferi",
+        "Chips och godis": "🍫 Chips och godis",
+        "Övrigt": "🛒 Övrigt",
     },
 }
 
@@ -365,18 +359,18 @@ def extract_recipe_url(text: str) -> str | None:
     """Extracts the direct recipe URL from the instructions if present."""
     if not text:
         return None
-    # Look for full web links (http or https)
     match = re.search(r"(https?://[^\s\)\>\]]+)", text)
     return match.group(1).rstrip(".,;") if match else None
+
 
 def format_steps(text: str) -> str:
     """Formats steps into a clean numbered list while preserving links."""
     if not text:
         return ""
-    # Ensure step numbers start on separate lines with empty space
     formatted = re.sub(r"(?<!\n)(\b\d+[\.\)])\s*", r"\n\1 ", text)
     lines = [line.strip() for line in formatted.splitlines() if line.strip()]
     return "\n\n".join(lines)
+
 
 def cfg(key: str, default: str = "") -> str:
     try:
@@ -550,7 +544,6 @@ with tab_plan, db.SessionLocal() as s:
                     else:
                         st.write(t["attempt_pass"].format(attempt=attempt))
 
-                # Inject language instruction into note
                 full_note = (
                     f"{note}. {t['ai_lang_instruction']}"
                     if note
@@ -608,9 +601,10 @@ with tab_plan, db.SessionLocal() as s:
                         GroceryItem(
                             name=ing["name"],
                             amount=ing.get("amount", ""),
-                            aisle="Produce"
-                            if "Produce" in db.AISLES
-                            else db.AISLES[0],
+                            # Routes salad vegetables directly to Frukt och grönt
+                            aisle="Frukt och grönt"
+                            if "Frukt och grönt" in db.AISLES
+                            else db.AISLES[-1],
                             source="custom",
                             checked=False,
                         )
@@ -659,10 +653,8 @@ with tab_plan, db.SessionLocal() as s:
                     )
                     st.markdown(f"**{t['steps']}**")
 
-                    # 1. Display full verbatim steps and any inline source link
                     st.markdown(format_steps(m.instructions))
 
-                    # 2. Extract and display the direct source button
                     direct_url = extract_recipe_url(m.instructions)
                     if direct_url:
                         btn_label = (
@@ -672,7 +664,6 @@ with tab_plan, db.SessionLocal() as s:
                         )
                         st.link_button(btn_label, direct_url)
                     else:
-                        # Fallback search if no URL was present in instructions
                         q = quote_plus(m.title)
                         st.link_button(
                             "🔍 Sök originalreceptet ↗"
@@ -682,7 +673,6 @@ with tab_plan, db.SessionLocal() as s:
                         )
 
                     options = list(dict.fromkeys(categories + [m.category]))
-                    # Categories translated with format_func
                     cat = st.selectbox(
                         t["swap_for"],
                         options,
@@ -724,8 +714,7 @@ with tab_grocery, db.SessionLocal() as s:
         name = st.text_input(t["add_item"], placeholder=t["item_placeholder"])
         c1, c2 = st.columns(2)
         amount = c1.text_input(t["amount"], placeholder=t["amount_placeholder"])
-        other_idx = db.AISLES.index("Other") if "Other" in db.AISLES else 0
-        # Aisle translated with format_func
+        other_idx = db.AISLES.index("Övrigt") if "Övrigt" in db.AISLES else len(db.AISLES) - 1
         aisle = c2.selectbox(
             t["aisle"],
             db.AISLES,
@@ -751,23 +740,80 @@ with tab_grocery, db.SessionLocal() as s:
         left_count = sum(not i.checked for i in items)
         st.caption(t["items_left"].format(left=left_count, total=len(items)))
 
-        # Group and display by translated aisle name
+        # =====================================================================
+        # 🔗 TOOL: MERGE DUPLICATES (e.g. Vitlök 6 st + Vitlök 2 klyftor)
+        # =====================================================================
+        merge_label = "🔗 Slå ihop varor / dubbletter" if lang == "Svenska" else "🔗 Merge duplicate items"
+        with st.expander(merge_label):
+            selectable_items = {f"{i.name} ({i.amount or '0'}) [{i.aisle}]": i for i in items if not i.checked}
+            selected_labels = st.multiselect(
+                "Välj varor som ska slås ihop:" if lang == "Svenska" else "Select items to combine:",
+                options=list(selectable_items.keys()),
+            )
+
+            if len(selected_labels) >= 2:
+                chosen_items = [selectable_items[lbl] for lbl in selected_labels]
+                col_m1, col_m2 = st.columns(2)
+                merged_name = col_m1.text_input("Gemensamt namn", value=chosen_items[0].name)
+                merged_amount = col_m2.text_input("Total mängd (t.ex. 8 klyftor)", value="")
+                merged_aisle = st.selectbox("Kategori / Hylla", db.AISLES, index=db.AISLES.index(chosen_items[0].aisle) if chosen_items[0].aisle in db.AISLES else len(db.AISLES) - 1)
+
+                if st.button("✨ Slå ihop till en vara" if lang == "Svenska" else "✨ Combine into one item"):
+                    chosen_items[0].name = merged_name.strip()
+                    chosen_items[0].amount = merged_amount.strip()
+                    chosen_items[0].aisle = merged_aisle
+                    for other in chosen_items[1:]:
+                        s.delete(other)
+                    s.commit()
+                    st.rerun()
+
+        st.divider()
+
+        # =====================================================================
+        # 🛒 DISPLAY ITEMS BY AISLE WITH INLINE ✏️ POPUP EDIT
+        # =====================================================================
         for aisle in db.AISLES:
             group = [i for i in items if i.aisle == aisle]
             if not group:
                 continue
+
             st.markdown(f"**{fmt_aisle(aisle, lang)}**")
             for i in group:
                 label = f"{i.name} — {i.amount}" if i.amount else i.name
                 if i.source == "custom":
                     label += " ✍️"
-                st.checkbox(
-                    f"~~{label}~~" if i.checked else label,
-                    value=i.checked,
-                    key=f"gi_{i.id}",
-                    on_change=toggle_item,
-                    args=(i.id,),
-                )
+
+                col_chk, col_pop = st.columns([0.82, 0.18])
+
+                with col_chk:
+                    st.checkbox(
+                        f"~~{label}~~" if i.checked else label,
+                        value=i.checked,
+                        key=f"gi_{i.id}",
+                        on_change=toggle_item,
+                        args=(i.id,),
+                    )
+
+                with col_pop:
+                    with st.popover("✏️"):
+                        edit_name = st.text_input("Vara", value=i.name, key=f"en_{i.id}")
+                        edit_amt = st.text_input("Mängd", value=i.amount or "", key=f"ea_{i.id}")
+                        cur_idx = db.AISLES.index(i.aisle) if i.aisle in db.AISLES else len(db.AISLES) - 1
+                        edit_aisle = st.selectbox(
+                            "Flytta till hylla:",
+                            db.AISLES,
+                            index=cur_idx,
+                            format_func=lambda a: fmt_aisle(a, lang),
+                            key=f"es_{i.id}",
+                        )
+
+                        col_b1, col_b2 = st.columns(2)
+                        if col_b1.button("Spara", key=f"save_{i.id}"):
+                            db.update_grocery_item(s, i.id, edit_name, edit_amt, edit_aisle)
+                            st.rerun()
+                        if col_b2.button("Ta bort", key=f"del_{i.id}", type="secondary"):
+                            db.delete_grocery_item(s, i.id)
+                            st.rerun()
 
         c1, c2 = st.columns(2)
         if c1.button(t["remove_bought"]):
@@ -781,7 +827,6 @@ with tab_grocery, db.SessionLocal() as s:
                 del st.session_state[k]
             st.rerun()
 
-        # Build share text with translated headers
         lines = []
         for a in db.AISLES:
             group = [i for i in items if i.aisle == a]
@@ -818,7 +863,6 @@ with tab_settings, db.SessionLocal() as s:
         current = [
             c for c in p.categories.split(",") if c in agent.ALL_CATEGORIES
         ]
-        # Categories translated with format_func
         categories = st.multiselect(
             t["rotate_between"],
             agent.ALL_CATEGORIES,
