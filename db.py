@@ -4,7 +4,9 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship,
 
 DEFAULT_CATEGORIES = "pasta,chicken,meat,fish"
 
-# Only the structural list of allowed categories in order
+# ==============================================================================
+# 🛒 EXACT AISLES IN YOUR REQUESTED ORDER
+# ==============================================================================
 AISLES = [
     "Badrums artiklar",
     "Bröd",
@@ -69,8 +71,7 @@ class Ingredient(Base):
     __tablename__ = "ingredient"
     id: Mapped[int] = mapped_column(primary_key=True)
     meal_id: Mapped[int] = mapped_column(ForeignKey("meal.id", ondelete="CASCADE"))
-    name: Mapped[str]          # Original name for recipe cooking card
-    shopping_name: Mapped[str] # AI-normalized clean name for grocery list
+    name: Mapped[str]
     quantity: Mapped[float]
     unit: Mapped[str]
     aisle: Mapped[str]
@@ -110,20 +111,12 @@ def latest_plan(s) -> MealPlan | None:
 
 
 def _ingredients(items) -> list[Ingredient]:
-    """Dynamically reads original and AI-normalized names directly from harvested data."""
     res = []
     for i in items:
-        # 1. Original text for the cooking card
-        raw_name = getattr(i, "original_name", None) or getattr(i, "name", "")
-        # 2. Clean AI-normalized name for the grocery shopping list
-        clean_name = getattr(i, "normalized_name", None) or raw_name
-        
-        raw_aisle = getattr(i, "aisle", "Övrigt")
-        aisle = raw_aisle if raw_aisle in AISLES else "Övrigt"
-
+        name = (i.name or "").strip()
+        aisle = i.aisle if i.aisle in AISLES else "Övrigt"
         res.append(Ingredient(
-            name=raw_name.strip(),
-            shopping_name=clean_name.strip().capitalize(),
+            name=name,
             quantity=i.quantity or 0,
             unit=(i.unit or "").strip(),
             aisle=aisle
@@ -163,16 +156,15 @@ def fmt_amount(quantity: float, unit: str) -> str:
 
 
 def rebuild_grocery_list(s, plan: MealPlan) -> None:
-    """Aggregates and sums up items using the AI-generated shopping names."""
+    """Aggregates and sums up items for the grocery list."""
     old = s.scalars(select(GroceryItem).where(GroceryItem.source == "plan")).all()
     was_checked = {i.name.lower() for i in old if i.checked}
     s.execute(delete(GroceryItem).where(GroceryItem.source == "plan"))
 
-    totals: dict[tuple[str, str], dict] = {}
+    totals: dict[tuple[str, str, str], dict] = {}
     for meal in plan.meals:
         for ing in meal.ingredients:
-            # Uses the AI-normalized shopping name directly
-            clean_name = (ing.shopping_name or ing.name or "").strip().capitalize()
+            name = (ing.name or "").strip()
             unit, qty = (ing.unit or "").lower(), ing.quantity or 0
 
             if unit in TO_BASE:
@@ -180,37 +172,20 @@ def rebuild_grocery_list(s, plan: MealPlan) -> None:
                 qty *= factor
 
             aisle = ing.aisle
-            key = (clean_name.lower(), aisle)
+            key = (name.lower(), unit, aisle)
 
             # Sum quantities for identical items
-            found = False
-            for entry in totals.setdefault(key, []):
-                if entry["unit"] == unit or not entry["unit"] or not unit:
-                    if not entry["unit"] and unit:
-                        entry["unit"] = unit
-                    entry["qty"] += qty
-                    found = True
-                    break
-            if not found:
-                totals.setdefault(key, []).append({
-                    "display_name": clean_name,
-                    "unit": unit,
-                    "qty": qty
-                })
+            entry = totals.setdefault(key, {"qty": 0.0, "display_name": name})
+            entry["qty"] += qty
 
-    for (norm_name, aisle), entries in totals.items():
-        for e in entries:
-            qty = e["qty"]
-            unit = e["unit"]
-            amount = fmt_amount(qty, unit) if (qty > 0 or unit) else ""
-
-            s.add(GroceryItem(
-                name=e["display_name"], 
-                amount=amount,
-                aisle=aisle, 
-                source="plan", 
-                checked=norm_name in was_checked
-            ))
+    for (norm_name, unit, aisle), e in totals.items():
+        s.add(GroceryItem(
+            name=e["display_name"], 
+            amount=fmt_amount(e["qty"], unit),
+            aisle=aisle, 
+            source="plan", 
+            checked=norm_name in was_checked
+        ))
     s.commit()
 
 
@@ -219,8 +194,8 @@ def grocery_items(s) -> list[GroceryItem]:
     aisle_order = {aisle: idx for idx, aisle in enumerate(AISLES)}
     return sorted(items, key=lambda x: (aisle_order.get(x.aisle, 99), x.name))
 
+
 def update_grocery_item(s, item_id: int, name: str, amount: str, aisle: str) -> None:
-    """Updates an item's name, amount, or moves it to a new aisle."""
     item = s.get(GroceryItem, item_id)
     if item:
         item.name = name.strip()
@@ -230,7 +205,6 @@ def update_grocery_item(s, item_id: int, name: str, amount: str, aisle: str) -> 
 
 
 def delete_grocery_item(s, item_id: int) -> None:
-    """Deletes an item from the grocery list."""
     item = s.get(GroceryItem, item_id)
     if item:
         s.delete(item)
