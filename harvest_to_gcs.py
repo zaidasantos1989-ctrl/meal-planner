@@ -10,6 +10,8 @@ for k in [
 ]:
     os.environ.pop(k, None)
 
+# Remove or comment out: import requests
+from curl_cffi import requests
 from collections import defaultdict
 import json
 import random
@@ -200,7 +202,9 @@ def auto_discover_links(hub_url: str, existing_urls: set) -> list[str]:
         "Accept-Language": "sv-SE,sv;q=0.9",
     }
     try:
-        resp = session.get(hub_url, headers=headers, timeout=15, verify=False)
+        # Inside auto_discover_links() to bypass ICA:
+        resp = requests.get(hub_url, impersonate="chrome", timeout=15, verify=False)
+        #resp = session.get(hub_url, headers=headers, timeout=15, verify=False)
         resp.raise_for_status()
     except Exception as e:
         print(f"  ❌ Could not open hub: {e}")
@@ -308,7 +312,9 @@ def parse_and_classify_recipe(client, url: str) -> dict | None:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36",
         "Accept-Language": "sv-SE,sv;q=0.9",
     }
-    resp = session.get(url, headers=headers, timeout=15, verify=False)
+    # Inside parse_and_classify_recipe():
+    resp = requests.get(url, impersonate="chrome", timeout=15, verify=False)  
+    #resp = session.get(url, headers=headers, timeout=15, verify=False)
     resp.raise_for_status()
 
     # Pre-check: If this is an article or guide without recipe steps, SKIP IT immediately!
