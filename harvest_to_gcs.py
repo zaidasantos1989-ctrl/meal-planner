@@ -152,9 +152,9 @@ def is_valid_recipe_url(url: str, base_domain: str) -> bool:
     path = urlparse(url).path.strip("/")
     segments = [s for s in path.split("/") if s]
 
-    # --- ICA.se: Real recipes ALWAYS end in a number (e.g. /recept/korvstroganoff-712808/) ---
+# --- ICA.se: Real recipes ALWAYS end in a number (e.g. /recept/korvstroganoff-712808/) ---
     if "ica.se" in base_domain:
-        return bool(re.search(r"/recept/[a-z0-9-]+-\d+/?$", url_lower))
+         return bool(re.search(r"/recept/[a-z0-9-]+-\d+/?$", url_lower))
 
     # --- Recepten.se: Real recipes are under /recept/ and end in .html ---
     if "recepten.se" in base_domain:
@@ -401,7 +401,7 @@ def save_to_gcs(bucket, recipe: dict):
     )
 
 
-TARGET_NEW_RECIPES = 1  # Number of REAL recipes to successfully save per run
+TARGET_NEW_RECIPES = 60  # Number of REAL recipes to successfully save per run
 
 def main():
     # Read API key safely from environment variables or fallback to secrets
